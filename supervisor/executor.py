@@ -86,7 +86,9 @@ class CodexExecutor:
         argv += ["-"]
         env = sanitized_environment()
         # Auth is reused by Codex only. Never copy auth.json, export keys or log environment values.
-        for key in ("USERPROFILE", "APPDATA", "LOCALAPPDATA", "CODEX_HOME", "HOME"):
+        for key in ("USERPROFILE", "APPDATA", "LOCALAPPDATA", "CODEX_HOME", "HOME",
+                    "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY",
+                    "http_proxy", "https_proxy", "all_proxy", "no_proxy"):
             if key in os.environ:
                 env[key] = os.environ[key]
         code, stdout, _ = run_command(argv, worktree, config["max_call_seconds"], self.interrupt, env, prompt)

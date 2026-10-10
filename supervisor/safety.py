@@ -145,6 +145,8 @@ def tree_hash(root, files):
     result = {}
     for name in files:
         path = root / safe_relative(name)
+        if not path.resolve().is_relative_to(root.resolve()):
+            raise Blocked("path_outside_workspace")
         plain_file(path)
         result[name] = digest(path.read_bytes())
     return result

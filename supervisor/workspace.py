@@ -64,6 +64,8 @@ def changed_files(worktree, allowed, protected):
         raise Blocked("no_code_change")
     for name in names:
         path = worktree / safe_relative(name)
+        if not path.resolve().is_relative_to(worktree.resolve()):
+            raise Blocked("path_outside_workspace")
         if forbidden(name) or name not in allowed or name in protected:
             raise Blocked("change_outside_approved_scope")
         if not path.exists():
