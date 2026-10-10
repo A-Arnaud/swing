@@ -14,7 +14,7 @@ from .store import Store
 from .workspace import backup, changed_files, collect, initialize_repo
 
 DEFAULTS = {
-    "mode": "demo", "live_enabled": False, "isolated_execution_confirmed": False,
+    "mode": "demo", "execution_backend": "direct", "live_enabled": False, "isolated_execution_confirmed": False,
     "max_ai_calls_per_day": 0, "max_tokens_per_day": 0, "reserve_tokens_per_call": 100_000,
     "max_call_seconds": 600, "max_attempts_per_proposal": 2, "max_no_progress_cycles": 3,
     "max_blocked_windows": 3,
@@ -61,7 +61,9 @@ def exclusive(root):
         handle.close()  # OS releases the lock, including on a crash; no stale PID killing.
 
 
-def initialize(root, source=None):
+def initialize(root, source=None, execution_backend="direct"):
+    if execution_backend not in {"direct", "ralph"}:
+        raise Blocked("invalid_execution_backend")
     root = Path(root).resolve()
     if root.exists():
         raise Blocked("runtime_already_exists")
@@ -69,6 +71,7 @@ def initialize(root, source=None):
     files = collect(source) if source else DEMO_FILES
     manifest = initialize_repo(root / "repository", files)
     config = dict(DEFAULTS)
+    config["execution_backend"] = execution_backend
     if source:
         config.update(mode="snapshot", allowed_files=[], protected_files=list(files),
                       validation_argv=[], benchmark_argv=[])
@@ -91,8 +94,20 @@ class Supervisor:
         self.config = json.loads((self.root / "config.json").read_text())
         self.store = Store(self.root / "state.sqlite")
         self.repo = self.root / "repository"
-        self.executor = executor or (DemoExecutor() if self.config["mode"] == "demo" else
-                                     CodexExecutor(self.config, self.store, self.interrupted))
+        backend = self.config.get("execution_backend", "direct")
+        if backend not in {"direct", "ralph"}:
+            self.store.close()
+            raise Blocked("invalid_execution_backend")
+        if executor is not None:
+            self.executor = executor
+        elif backend == "ralph":
+            from .ralph import RalphDemoTransport, RalphExecutor
+            transport = (RalphDemoTransport() if self.config["mode"] == "demo" else
+                         CodexExecutor(self.config, self.store, self.interrupted))
+            self.executor = RalphExecutor(self.root, transport, self.store, self.interrupted)
+        else:
+            self.executor = (DemoExecutor() if self.config["mode"] == "demo" else
+                             CodexExecutor(self.config, self.store, self.interrupted))
 
     def close(self):
         self.store.close()
@@ -196,11 +211,14 @@ class Supervisor:
                 report = json.loads(raw)
                 report.update(status="interrupted", reason="supervisor_restarted")
                 self.store.cycle(old_id, report, "interrupted")
+                if hasattr(self.executor, "record_result"):
+                    self.executor.record_result(report)
                 self.store.set("control", {"mode": "paused", "reason": "crash_review_required"})
             if not self.ready():
                 return {"status": "idle", "control": self.store.get("control")}
             id = uuid.uuid4().hex
-            report = {"id": id, "started_at": time.time(), "mode": self.config["mode"], "status": "running"}
+            report = {"id": id, "started_at": time.time(), "mode": self.config["mode"], "status": "running",
+                      "execution_backend": self.config.get("execution_backend", "direct")}
             self.store.cycle(id, report)
             proposal = None
             try:
@@ -274,6 +292,8 @@ class Supervisor:
                                                    "until": time.time() + self.config["cooldown_seconds"]})
             report["elapsed_seconds"] = round(time.time() - report["started_at"], 3)
             self.store.cycle(id, report, report["status"])
+            if hasattr(self.executor, "record_result"):
+                self.executor.record_result(report)
             return report
 
     def run(self, max_cycles=None):

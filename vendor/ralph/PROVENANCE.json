@@ -1,0 +1,13 @@
+{
+  "repository": "https://github.com/snarktank/ralph",
+  "revision": "6c53cb0b831ebe8739c6a003e22af14902d8b0b5",
+  "retrieved_on": "2026-10-10",
+  "license": "MIT",
+  "method": "Public raw files read through web tool at the pinned revision; numbered lines reconstructed with LF and final newline. Git network clone was unavailable. Not a full clone or a claim about latest upstream HEAD.",
+  "normalized_sha256": {
+    "ralph.sh": "2ac296ce4235f170ce80b1e5b4e355450710febf8715df20d248003f79d83b4b",
+    "prompt.md": "f0beef0f70e6ec4b71cdb92e942f0efdb6abc9f44e09b01326cbc704700b8724",
+    "LICENSE": "796601649a8e02c6868d326c035b2a5c52e7f08e0454c7e59f159f29e0a0f370"
+  },
+  "execution": "Reference only. Upstream launcher and prompt are never passed to a shell or an agent. Windows implementation is supervisor/ralph.py with prompts/ralph-codex.md."
+}

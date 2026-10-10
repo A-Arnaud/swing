@@ -1,0 +1,60 @@
+{
+  "model_calls": 0,
+  "fixture": "synthetic summation; fake agents, real validation",
+  "backends": {
+    "direct": {
+      "runtime": "C:\\Users\\Administrator\\Downloads\\d\\token-radar\\.local\\supervisor-prototype\\runtime-comparison-direct-44c71def",
+      "report": "C:\\Users\\Administrator\\Downloads\\d\\token-radar\\.local\\supervisor-prototype\\runtime-comparison-direct-44c71def\\reports\\index.html",
+      "statuses": [
+        "rejected",
+        "accepted_in_snapshot",
+        "rejected",
+        "rejected",
+        "rejected"
+      ],
+      "before_ms": 107.3303000002852,
+      "after_ms": 0.040300000364368316,
+      "improvement_percent": 99.9624523546806,
+      "cycle_elapsed_seconds": [
+        1.93,
+        3.133,
+        0.631,
+        0.634,
+        0.638
+      ],
+      "control": {
+        "mode": "auto_paused",
+        "reason": "no_progress",
+        "until": 1791631456.9493697
+      },
+      "bundles_verified": 3
+    },
+    "ralph": {
+      "runtime": "C:\\Users\\Administrator\\Downloads\\d\\token-radar\\.local\\supervisor-prototype\\runtime-comparison-ralph-1428774b",
+      "report": "C:\\Users\\Administrator\\Downloads\\d\\token-radar\\.local\\supervisor-prototype\\runtime-comparison-ralph-1428774b\\reports\\index.html",
+      "statuses": [
+        "rejected",
+        "accepted_in_snapshot",
+        "rejected",
+        "rejected",
+        "rejected"
+      ],
+      "before_ms": 104.48170000017853,
+      "after_ms": 0.03980000019510044,
+      "improvement_percent": 99.96190720461571,
+      "cycle_elapsed_seconds": [
+        2.143,
+        3.093,
+        0.579,
+        0.583,
+        0.589
+      ],
+      "control": {
+        "mode": "auto_paused",
+        "reason": "no_progress",
+        "until": 1791631464.844162
+      },
+      "bundles_verified": 3
+    }
+  }
+}

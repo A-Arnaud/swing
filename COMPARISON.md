@@ -5,7 +5,7 @@ Sources primaires consultées : [Ralph de Geoffrey Huntley](https://ghuntley.com
 | Solution | Intérêt pour ce projet | Écart avec le besoin | Décision |
 |---|---|---|---|
 | Reprise existante toutes les 5 h | Déjà installée, mutex, logs, modèle/configuration existants | Écrit dans le principal, pas de validation indépendante, historique narratif, budget et promotion non contrôlés | Conserver sans modification durant le prototype ; transition ultérieure explicite |
-| Ralph, implémentation snarktank | Petites tâches, contexte frais, mémoire Git/progrès, tests par itération | Script Bash orienté Amp/Claude, arrêt lorsque le PRD est terminé ; pas un superviseur Windows avec budget mesuré et découverte permanente | Reprendre les principes ; ne pas installer son script ni ses dépendances |
+| Ralph, implémentation snarktank | Petites tâches, contexte frais, mémoire Git/progrès, tests par itération | Script Bash orienté Amp/Claude, arrêt lorsque le PRD est terminé ; nécessite une adaptation Windows/Codex et une supervision indépendante | Copie amont versionnée et adaptation Python intégrées ; exécutant optionnel `ralph`, sans exécution du lanceur Bash |
 | Codex SDK TypeScript officiel | Threads locaux, reprise par identifiant, transport structuré ; Node présent | Package absent ici ; gestion d'approbations complexes à vérifier ; ne fournit pas à lui seul politique de validation, Git ou plafond de coût | Exemple d'adaptateur fourni ; installation et intégration différées |
 | Codex SDK Python officiel | App-server JSON-RPC ; cohérent avec un superviseur Python | Package absent ; la documentation indique un runtime épinglé, à comparer au CLI installé ; nouvelle dépendance et tests nécessaires | Alternative à évaluer au cycle d'intégration, sans installation globale |
 | Codex CLI `exec --json` | Déjà installé et authentification existante réutilisable ; événements et schéma de sortie | Contrôle moins riche que l'app-server ; usage fourni en fin de tour ; certaines restrictions locales actuelles | Transport de prototype implémenté derrière une interface, désactivé par défaut |
@@ -41,3 +41,10 @@ Le prototype fonctionne sans PostgreSQL/Redis, Docker, WSL, serveur public, clé
 La démo prouve la mécanique, pas la qualité d'un choix de modèle, d'une proposition IA ou d'une amélioration financière de Token Radar. L'acceptation implémentée exige une métrique numérique positive à minimiser ; il faudra ajouter des contrats explicites pour une correction fonctionnelle sans objectif de vitesse, des métriques multiples et des cohortes live. Les tests de référence ne peuvent pas être modifiés par l'exécutant ; les évolutions du contrat exigent une revue distincte.
 
 La séparation Git et les exclusions empêchent des écritures accidentelles courantes, mais ne sécurisent pas l'exécution d'un code généré hostile. Cette dernière exige une isolation OS vérifiée avant activation live. Les appels/tokens/temps sont suivis, mais aucune conversion fiable en euros ni plafond financier absolu n'est prétendu pour l'abonnement Codex actuel.
+# Intégration ajoutée le 10 octobre 2026
+
+L'option hybride est maintenant implémentée : voir [RALPH.md](RALPH.md).
+La comparaison initiale ci-dessous décrit le choix précédent. Ralph est
+désormais un exécutant optionnel, adapté en Python pour Windows avec Codex CLI.
+La copie amont est conservée avec sa licence et sa révision. Les essais restent
+des tests d'orchestration sans appel IA réel.

@@ -1,0 +1,60 @@
+<!doctype html><html lang="fr"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Comparaison Ralph / superviseur</title><style>body{font:17px system-ui;max-width:850px;margin:auto;padding:20px}td,th{padding:10px;border-bottom:1px solid #aaa}table{width:100%}</style><h1>Comparaison des deux exécutants</h1><p>Fixture synthétique. Agents simulés ; tests, mesures et sauvegardes Git réels. Aucun appel IA.</p><table><tr><th>Exécutant</th><th>Avant (ms)</th><th>Après (ms)</th><th>Gain</th></tr><tr><td>direct</td><td>107.330</td><td>0.040</td><td>99.962%</td></tr><tr><td>ralph</td><td>104.482</td><td>0.040</td><td>99.962%</td></tr></table><p>Les deux rejettent le changement incorrect, acceptent l’alternative puis cherchent encore et se mettent en pause après trois cycles sans progrès.</p><p>Ces mesures ne comparent pas la qualité de deux IA. Elles ne prouvent pas que Ralph produit de meilleures améliorations. Les temps de cycle incluent Git et les tests.</p><details><summary>Résultats complets</summary><pre style="overflow:auto">{
+  &quot;model_calls&quot;: 0,
+  &quot;fixture&quot;: &quot;synthetic summation; fake agents, real validation&quot;,
+  &quot;backends&quot;: {
+    &quot;direct&quot;: {
+      &quot;runtime&quot;: &quot;C:\\Users\\Administrator\\Downloads\\d\\token-radar\\.local\\supervisor-prototype\\runtime-comparison-direct-44c71def&quot;,
+      &quot;report&quot;: &quot;C:\\Users\\Administrator\\Downloads\\d\\token-radar\\.local\\supervisor-prototype\\runtime-comparison-direct-44c71def\\reports\\index.html&quot;,
+      &quot;statuses&quot;: [
+        &quot;rejected&quot;,
+        &quot;accepted_in_snapshot&quot;,
+        &quot;rejected&quot;,
+        &quot;rejected&quot;,
+        &quot;rejected&quot;
+      ],
+      &quot;before_ms&quot;: 107.3303000002852,
+      &quot;after_ms&quot;: 0.040300000364368316,
+      &quot;improvement_percent&quot;: 99.9624523546806,
+      &quot;cycle_elapsed_seconds&quot;: [
+        1.93,
+        3.133,
+        0.631,
+        0.634,
+        0.638
+      ],
+      &quot;control&quot;: {
+        &quot;mode&quot;: &quot;auto_paused&quot;,
+        &quot;reason&quot;: &quot;no_progress&quot;,
+        &quot;until&quot;: 1791631456.9493697
+      },
+      &quot;bundles_verified&quot;: 3
+    },
+    &quot;ralph&quot;: {
+      &quot;runtime&quot;: &quot;C:\\Users\\Administrator\\Downloads\\d\\token-radar\\.local\\supervisor-prototype\\runtime-comparison-ralph-1428774b&quot;,
+      &quot;report&quot;: &quot;C:\\Users\\Administrator\\Downloads\\d\\token-radar\\.local\\supervisor-prototype\\runtime-comparison-ralph-1428774b\\reports\\index.html&quot;,
+      &quot;statuses&quot;: [
+        &quot;rejected&quot;,
+        &quot;accepted_in_snapshot&quot;,
+        &quot;rejected&quot;,
+        &quot;rejected&quot;,
+        &quot;rejected&quot;
+      ],
+      &quot;before_ms&quot;: 104.48170000017853,
+      &quot;after_ms&quot;: 0.03980000019510044,
+      &quot;improvement_percent&quot;: 99.96190720461571,
+      &quot;cycle_elapsed_seconds&quot;: [
+        2.143,
+        3.093,
+        0.579,
+        0.583,
+        0.589
+      ],
+      &quot;control&quot;: {
+        &quot;mode&quot;: &quot;auto_paused&quot;,
+        &quot;reason&quot;: &quot;no_progress&quot;,
+        &quot;until&quot;: 1791631464.844162
+      },
+      &quot;bundles_verified&quot;: 3
+    }
+  }
+}</pre></details></html>

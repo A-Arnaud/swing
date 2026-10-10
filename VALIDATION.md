@@ -47,3 +47,22 @@ Les commandes ont un délai, une sortie cumulée bornée à 2 Mo et, sur Windows
 La validation des contrats exécutant du code candidat se déroule dans l'environnement du superviseur pour la démo. **Avant le mode réel, exécuter l'ensemble exécutant + tests dans une frontière OS effectivement isolée.** Le drapeau d'attestation de configuration ne crée pas cette frontière. L'adaptateur CLI, les erreurs réseau, les quotas modèle et un fonctionnement prolongé réel avec IA restent à tester après cette préparation.
 
 Le contrôle financier exact de l'abonnement n'est pas disponible ici ; la réservation de tokens est conservatrice mais peut être dépassée dans un appel. Le rapport HTML fonctionne hors ligne ; consultation distante continue/authentifiée et contrôles depuis téléphone restent à connecter avec validation. Ancienne automatisation principale conservée, pas remplacée silencieusement.
+# Validation de l'intégration Ralph — 10 octobre 2026
+
+- Suite complète : **26 tests réussis en 50,563 s**, dont 6 nouveaux tests Ralph.
+- Ruff E4/E7/E9/F/I et `git diff --check` réussis.
+- Faux COMPLETE rejeté par le contrat indépendant ; `passes` reste faux.
+- Alternative acceptée ; progression de l'échec précédent transmise à la session suivante.
+- Pause/reprise après redémarrage, refus de changement des tests, mauvaise branche,
+  arrêt manuel, activation réelle désautorisée et budget nul vérifiés.
+- Comparaison réelle de la fixture : direct 107,3303 → 0,0403 ms ;
+  adaptation Ralph 104,4817 → 0,0398 ms (gain 99,9619 %).
+- Les deux exécutants cherchent encore après l'optimisation puis passent en
+  pause automatique après trois cycles sans hypothèse nouvelle.
+- Trois bundles vérifiés par exécutant ; worktrees rejetés conservés.
+- Rapport : [ralph-comparison.html](ralph-comparison.html), mesures complètes :
+  [ralph-comparison-results.json](ralph-comparison-results.json).
+- Empreintes de la copie importée du projet principal toujours identiques.
+- **Zéro appel IA réel, aucun service permanent lancé, aucune activation de
+  Codex réel ni promotion dans Token Radar.** Les agents de la comparaison sont
+  simulés ; ces résultats ne comparent pas la qualité de modèles.

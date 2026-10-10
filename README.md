@@ -8,6 +8,10 @@ Voir [COMPARISON.md](COMPARISON.md) pour l'étude de Ralph Loop et du SDK offici
 
 ## Fonctionnement
 
+L'exécutant Ralph–Codex est désormais disponible en option (`init --executor ralph`).
+Voir [RALPH.md](RALPH.md) pour la copie amont versionnée, l'adaptation Windows,
+les commandes et la comparaison. Le superviseur conserve ses contrôles indépendants.
+
 Un processus superviseur conserve son état dans SQLite et démarre des exécutants séparés. Chaque cycle :
 
 1. Relit les commandes de contrôle, les budgets, la référence Git validée et les preuves antérieures.

@@ -15,6 +15,7 @@ def main():
     sub = parser.add_subparsers(dest="command", required=True)
     init = sub.add_parser("init")
     init.add_argument("--source", type=Path)
+    init.add_argument("--executor", choices=["direct", "ralph"], default="direct")
     for name in ("once", "pause", "resume", "stop", "status", "report"):
         sub.add_parser(name)
     run = sub.add_parser("run")
@@ -28,7 +29,7 @@ def main():
     args = parser.parse_args()
     try:
         if args.command == "init":
-            initialize(args.runtime, args.source)
+            initialize(args.runtime, args.source, args.executor)
         supervisor = Supervisor(args.runtime)
         try:
             if args.command in {"pause", "resume", "stop"}:
