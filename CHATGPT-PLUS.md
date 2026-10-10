@@ -58,6 +58,14 @@ Il mesure un temps de calcul, pas une performance financière ou un résultat li
 
 ## État du lancement
 
+Le contrôle effectué ensuite par l'utilisateur depuis son PowerShell habituel
+a passé le contexte Windows, l'authentification ChatGPT et la lecture du quota.
+Il s'est arrêté sur `external_isolation_not_confirmed`. L'isolation est donc
+le prochain prérequis réel ; elle n'a pas encore été installée. Le script
+`check-isolation.ps1` fournit un inventaire en lecture seule des fonctionnalités
+de virtualisation et des informations CPU/mémoire nécessaires pour choisir
+l'environnement. Il n'active aucune fonctionnalité et ne redémarre pas Windows.
+
 Le lancement a été tenté le 10 octobre 2026 et **refusé** par le précontrôle :
 `restricted_windows_execution_context`. La consultation réelle du quota depuis
 cette session a aussi échoué (`chatgpt_quota_unknown`). Le runtime est arrêté,
