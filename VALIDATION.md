@@ -2,7 +2,7 @@
 
 ## Résultats exécutés
 
-- **20 tests du superviseur réussis**, Python `unittest`, véritables processus et opérations Git Windows. Dernière exécution : 32,591 s. Ruff sur `supervisor`/`tests` (`E4,E7,E9,F,I`) passe.
+- **20 tests du superviseur réussis**, Python `unittest`, véritables processus et opérations Git Windows. Dernière exécution : 31,336 s. Ruff sur `supervisor`/`tests` (`E4,E7,E9,F,I`) passe.
 - Syntaxe de `sdk-adapter.mjs` validée par Node. **Package SDK absent, import/exécution SDK non testés.** Aucun appel modèle/API réel effectué.
 - Projet principal : **139 tests réussis, 8 PostgreSQL ignorés** ; aucun changement de code principal réalisé dans ce travail. L'absence de PostgreSQL explique la limite de validation, pas une réussite live.
 - Copie de recherche : **125 fichiers importés** ; empreintes de la source vérifiées identiques après construction/tests. `.env`, données, clés, journaux et binaires exclus. Git et bundle créés dans la copie uniquement.
