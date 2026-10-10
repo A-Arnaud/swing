@@ -65,6 +65,19 @@ le prochain prérequis réel ; elle n'a pas encore été installée. Le script
 `check-isolation.ps1` fournit un inventaire en lecture seule des fonctionnalités
 de virtualisation et des informations CPU/mémoire nécessaires pour choisir
 l'environnement. Il n'active aucune fonctionnalité et ne redémarre pas Windows.
+Sa syntaxe PowerShell est validée ; son exécution depuis cette session est
+refusée par la politique des scripts. Sans modifier cette politique, les
+commandes de diagnostic intégrées suivantes peuvent être exécutées directement
+dans le PowerShell administrateur de l'utilisateur :
+
+```powershell
+Get-CimInstance Win32_Processor | Select-Object NumberOfCores,VirtualizationFirmwareEnabled,SecondLevelAddressTranslationExtensions
+Get-CimInstance Win32_ComputerSystem | Select-Object HypervisorPresent,TotalPhysicalMemory
+Get-WindowsOptionalFeature -Online -FeatureName Microsoft-Hyper-V-All | Select-Object FeatureName,State
+```
+
+Ces commandes lisent les prérequis ; elles ne créent pas de VM et n'attestent
+pas l'isolation. Source : [prérequis Hyper-V Microsoft](https://learn.microsoft.com/windows-server/virtualization/hyper-v/host-hardware-requirements?pivots=windows).
 
 Le lancement a été tenté le 10 octobre 2026 et **refusé** par le précontrôle :
 `restricted_windows_execution_context`. La consultation réelle du quota depuis
