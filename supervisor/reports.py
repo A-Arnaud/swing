@@ -10,6 +10,10 @@ def render(supervisor):
     directory.mkdir(exist_ok=True)
     summary = {"updated_at": datetime.now(timezone.utc).isoformat(),
                "control": store.get("control"), "mode": supervisor.config["mode"],
+               "model": supervisor.config.get("model"),
+               "reasoning_effort": supervisor.config.get("reasoning_effort", "medium"),
+               "chatgpt_quota": store.get("chatgpt_quota"),
+               "model_calls": store.db.execute("SELECT count(*) FROM calls").fetchone()[0],
                "production_promotion": "manual_only_not_implemented",
                "no_progress_cycles": store.get("no_progress", 0),
                "cycles": store.history(30), "proposals": store.proposals()}
@@ -40,6 +44,8 @@ h1{{font-size:26px}}h2{{font-size:19px}}small,pre{{overflow-wrap:anywhere;white-
 p{{line-height:1.5}}details{{margin-top:20px}}a{{color:#b6d8ff}}
 </style><main><h1>Amélioration continue — prototype</h1>
 <div class="state"><p>Mode : {escape(summary['mode'])} · État : {escape(summary['control'])}</p>
+<p>Modèle : {escape(summary['model'])} · Raisonnement : {escape(summary['reasoning_effort'])} · Appels IA : {summary['model_calls']}</p>
+<p>Quota ChatGPT : {escape(summary['chatgpt_quota'] if summary['chatgpt_quota'] else 'Lecture indisponible')}</p>
 <p>Validations en attente : {len(approvals)} · Cycles sans progrès : {summary['no_progress_cycles']}</p>
 <p>Projet principal conservé. Les changements acceptés restent dans la copie Git isolée.</p>
 <small>Actualisé : {escape(summary['updated_at'])}. Rapport statique : recharger pour actualiser.</small></div>

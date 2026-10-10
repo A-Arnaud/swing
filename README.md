@@ -8,6 +8,9 @@ Voir [COMPARISON.md](COMPARISON.md) pour l'étude de Ralph Loop et du SDK offici
 
 ## Fonctionnement
 
+La configuration demandée `gpt-6.1-sol medium` avec arrêt sur quota ChatGPT Plus
+est préparée : [état réel, contrôles et lancement](CHATGPT-PLUS.md).
+
 L'exécutant Ralph–Codex est désormais disponible en option (`init --executor ralph`).
 Voir [RALPH.md](RALPH.md) pour la copie amont versionnée, l'adaptation Windows,
 les commandes et la comparaison. Le superviseur conserve ses contrôles indépendants.

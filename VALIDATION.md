@@ -66,3 +66,20 @@ Le contrôle financier exact de l'abonnement n'est pas disponible ici ; la rése
 - **Zéro appel IA réel, aucun service permanent lancé, aucune activation de
   Codex réel ni promotion dans Token Radar.** Les agents de la comparaison sont
   simulés ; ces résultats ne comparent pas la qualité de modèles.
+# Configuration ChatGPT Plus — 10 octobre 2026
+
+- Suite après ajout du contrôle de quota : **33 tests réussis en 55,979 s**.
+- Sept tests nouveaux : fenêtres primaire/secondaire à 100 %, quota inconnu,
+  arrêt persistant et sortie immédiate de la boucle, modèle/medium/auth explicites,
+  refus des faux signaux provenant du code, valeurs de quota invalides et absence
+  de clés API dans l'environnement.
+- Référence applicative pour le périmètre features : **45 tests réussis, 1 test
+  PostgreSQL ignoré**, Ruff passe. Le contrat utilise cinq jeux synthétiques figés.
+- La tentative de suite complète dans la copie a révélé un test de récupération
+  qui exige `.venv/.local` du poste. Le contrat du runtime utilise donc les tests
+  des features et de leurs consommateurs applicatifs, sans modifier les tests.
+- Lecture réelle du quota : échec fermé `chatgpt_quota_unknown`.
+- Lancement réel tenté : refus `restricted_windows_execution_context`.
+- Runtime `runtime-chatgpt-plus` arrêté, isolation externe non attestée,
+  **0 appel au modèle**. Source principale identique à l'import, copie Git propre.
+- Voir [CHATGPT-PLUS.md](CHATGPT-PLUS.md) pour l'état et les conditions de lancement.

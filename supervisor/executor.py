@@ -7,6 +7,16 @@ from pathlib import Path
 from .safety import Blocked, run_command, sanitized_environment
 
 
+def quota_error(event):
+    # Inspect errors only: source text / final messages cannot control shutdown.
+    error = event.get("error") if event.get("type") == "turn.failed" else event if event.get("type") == "error" else None
+    if not isinstance(error, dict):
+        return False
+    text = json.dumps(error).lower()
+    return any(marker in text for marker in ("usagelimitexceeded", "usage_limit_exceeded",
+               "insufficient_quota", "usage limit", "quota exceeded", "quota exhausted"))
+
+
 def validate_proposal(item, base):
     required = {"problem", "strategy", "files", "impact", "cost", "risk", "evidence", "success_metric"}
     if not isinstance(item, dict) or set(item) != required:
@@ -73,12 +83,29 @@ class CodexExecutor:
         native = Path(config["codex_executable"])
         if not native.is_file() or native.suffix.lower() != ".exe" and os.name == "nt":
             raise Blocked("native_codex_executable_required")
+        if config.get("chatgpt_quota_guard", False):
+            from .quota import read_quota
+            try:
+                quota = read_quota(native, worktree, self.interrupt)
+                self.store.set("chatgpt_quota", quota)
+                if quota["exhausted"]:
+                    raise Blocked("chatgpt_quota_exhausted")
+            except Blocked as error:
+                if str(error) != "manual_interrupt":
+                    self.store.set("control", {"mode": "stopped", "reason": str(error)})
+                raise
         id = uuid.uuid4().hex
         day = datetime.now(timezone.utc).date().isoformat()
         self.store.reserve(id, day, config)
         argv = [str(native), "exec", "--ignore-user-config", "--sandbox", "read-only" if readonly else "workspace-write",
                 "-c", 'approval_policy="never"', "-c", "sandbox_workspace_write.network_access=false",
                 "-c", 'web_search="disabled"', "--json", "--color", "never", "--cd", str(worktree)]
+        argv += ["-c", 'model_reasoning_effort=' + json.dumps(config.get("reasoning_effort", "medium"))]
+        if os.name == "nt":
+            # --ignore-user-config must not inadvertently disable Windows sandboxing.
+            argv += ["-c", 'windows.sandbox="unelevated"']
+        if config.get("chatgpt_quota_guard", False):
+            argv += ["-c", 'forced_login_method="chatgpt"']
         if config.get("model"):
             argv += ["--model", config["model"]]
         if schema:
@@ -92,12 +119,15 @@ class CodexExecutor:
             if key in os.environ:
                 env[key] = os.environ[key]
         code, stdout, _ = run_command(argv, worktree, config["max_call_seconds"], self.interrupt, env, prompt)
-        final, usage, thread_id = None, None, None
+        final, usage, thread_id, exhausted = None, None, None, False
         for line in stdout.splitlines():
             try:
                 event = json.loads(line)
             except ValueError:
                 continue
+            if not isinstance(event, dict):
+                continue
+            exhausted = exhausted or quota_error(event)
             if event.get("type") == "thread.started":
                 thread_id = event.get("thread_id")
             if event.get("type") == "turn.completed":
@@ -113,6 +143,9 @@ class CodexExecutor:
                 raise Blocked("token_reservation_exceeded")
         if thread_id:
             self.store.set("last_thread_id", thread_id)
+        if exhausted:
+            self.store.set("control", {"mode": "stopped", "reason": "chatgpt_quota_exhausted"})
+            raise Blocked("chatgpt_quota_exhausted")
         if code or not final or not usage:
             raise Blocked("codex_call_failed_or_usage_unknown")
         return final
@@ -125,7 +158,7 @@ class CodexExecutor:
                   "Do not read secrets, change files, contact external services or spawn agents. All risks are "
                   "reviewed separately; no trading, deployment, service operations or deletion. Each proposal "
                   "must fit the schema and name a measurable acceptance criterion. Previous cycle summaries:\n" +
-                  json.dumps(history))
+                  json.dumps(history) + "\nTrusted editable scope: " + json.dumps(self.config.get("allowed_files", [])))
         schema = Path(__file__).resolve().parent.parent / "schemas/proposals.json"
         result = json.loads(self.call(worktree, prompt, schema, readonly=True))
         return [validate_proposal(item, base) for item in result["proposals"]]

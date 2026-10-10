@@ -21,6 +21,7 @@ DEFAULTS = {
     "cooldown_seconds": 3600, "interval_seconds": 900, "max_disk_mb": 500,
     "min_improvement_percent": 20,
     "model": "gpt-6.1-sol",
+    "reasoning_effort": "medium", "chatgpt_quota_guard": False,
     "codex_executable": "", "validation_argv": [sys.executable, "contract.py"],
     "benchmark_argv": [sys.executable, "bench.py"], "benchmark_repetitions": 3,
     "validation_timeout_seconds": 120, "allowed_files": ["calc.py"],
@@ -302,6 +303,8 @@ class Supervisor:
             result = self.cycle()
             from .reports import render
             render(self)
+            if self.store.get("control", {}).get("mode") == "stopped":
+                return
             if result["status"] != "idle":
                 cycles += 1
             if max_cycles is not None and cycles >= max_cycles:
