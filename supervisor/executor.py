@@ -176,7 +176,54 @@ class CodexExecutor:
             text += '\nOPERATOR_ACCEPTANCE_CRITERIA:\n' + json.dumps(
                 [{'criterion': c['criterion'], 'status': c['status']} for c in objective['criteria']],
                 ensure_ascii=False, separators=(',', ':'))
+        profile = self.store.get('project_profile')
+        if profile:
+            text += '\nPROJECT_SETUP:\n' + json.dumps(profile, ensure_ascii=False, separators=(',', ':'))
+            text += '\nPERSISTENT_PROJECT_UNDERSTANDING:\n' + json.dumps(
+                self.store.get('project_understanding'), ensure_ascii=False, separators=(',', ':'))
+            text += '\nBASELINE_CHECKS:\n' + json.dumps(self.store.get('baseline_checks'))
+        if self.config.get('allow_new_files'):
+            from .creation import EXTENSIONS
+            text += ('\nCREATION_SCOPE: New source files and regression tests may be proposed using these extensions: '
+                     + ','.join(sorted(EXTENSIONS)) + '. Each exact path must appear in proposal.files. '
+                     'No hidden folders, secrets, dependencies or configuration changes. Existing protected tests '
+                     'cannot be weakened; add new tests for new behavior. If only structural checks exist, a code '
+                     'task MUST include new behavioral regression tests in proposal.files or it cannot be accepted. '
+                     'For Python without a framework use unittest tests/test_*.py; for plain Node use *.test.js '
+                     'with node:test. Missing checks are not evidence of success.\n')
         return text
+
+    def understand_project(self, worktree, base):
+        prompt = (
+            'Understand this imported project once and produce a compact persistent orientation for future '
+            'creation/modification/test iterations. Read the README, manifests, entrypoints and selected callers. '
+            'Identify the actual purpose, major components/data flow, existing capabilities, gaps and testing '
+            'limitations. Do not invent requirements or audit every file. Describe 1-3 useful next priorities '
+            'consistent with operator guidance. The supplied validation recipes are controlled by the supervisor; '
+            'do not invent a shell command or change them. Structural checks do not prove feature correctness. '
+            'Read only: no edits, secrets, network, service operations, installs, deployment or other agents. '
+            'Keep each text under 1200 characters and priorities under 300 characters.\n' +
+            self.project_context(worktree, base))
+        self._context_receipt['stage'] = 'understanding'
+        fingerprint = self._context_receipt['fingerprint']
+        schema = Path(__file__).resolve().parent.parent / 'schemas/project-understanding.json'
+        raw = self.call(worktree, prompt, schema, readonly=True)
+        try:
+            result = json.loads(raw)
+        except ValueError:
+            raise Blocked('invalid_project_understanding') from None
+        from .guidance import snapshot
+        if snapshot(self.store)['fingerprint'] != fingerprint:
+            raise Blocked('instructions_changed_before_task')
+        if not isinstance(result, dict) or set(result) != {'purpose', 'architecture', 'testing', 'priorities'}:
+            raise Blocked('invalid_project_understanding')
+        for field in ('purpose', 'architecture', 'testing'):
+            if not isinstance(result[field], str) or not 1 <= len(result[field]) <= 1200:
+                raise Blocked('invalid_project_understanding')
+        if not isinstance(result['priorities'], list) or len(result['priorities']) > 3 or any(
+            not isinstance(p, str) or not 1 <= len(p) <= 300 for p in result['priorities']):
+            raise Blocked('invalid_project_understanding')
+        return {**result, 'base': base}
 
     def discover(self, worktree, history, base):
         prompt = (
@@ -184,8 +231,9 @@ class CodexExecutor:
             "reread every specification or reopen completed operator criteria. If those criteria are met, preserve their outcomes "
             "and look for other justified improvements consistent with the operator's constraints. "
             "Pick one priority area from the brief and current guidance; "
-            "inspect its source, callers and relevant tests. Stop exploring once one useful defect is "
-            "reproduced. Return that proposal and up to two adjacent, already evidenced tasks for the "
+            "inspect its source, callers and relevant tests. Stop exploring once one useful feature gap or defect is "
+            "demonstrated. Creation, modification and improvement are all supported within the supplied scope. "
+            "Return that proposal and up to two adjacent, already evidenced tasks for the "
             "persistent queue; do not spend extra time filling the queue. Return [] if none is justified. "
             "Do not repeat accepted/rejected work without new evidence. Each proposal needs precise code "
             "locations, a minimal reproduction, current vs expected behavior and observable acceptance. "
@@ -195,7 +243,7 @@ class CodexExecutor:
             "Unknown or censored evidence must remain unknown. Synthetic tests are not financial results. "
             "Read only: no file edits, secrets, external services, trading, deployments, process/service "
             "operations, deletion, permission changes or additional agents. Editable scope below is "
-            "binding; tests, dependencies, configuration and host scripts remain protected. "
+            "binding; existing protected tests, dependencies, configuration and host scripts remain protected. "
             "All existing independent checks must pass unchanged.\n\n" +
             self.project_context(worktree, base))
         schema = Path(__file__).resolve().parent.parent / "schemas/proposals.json"
@@ -229,8 +277,9 @@ class CodexExecutor:
             "the criterion it serves in success_metric. Return no unrelated tasks. When all criteria "
             "are met, return no tasks; independent checks will still decide the checkpoint. "
             "Read only: no edits, secrets, network, services, trading, deployment, deletion, permission "
-            "changes or additional agents. Existing tests, dependencies and configuration are "
-            "protected. Predictive improvement needs mature held-out outcomes, never synthetic "
+            "changes or additional agents. Existing protected tests, dependencies and configuration remain unchanged. "
+            "Create requested features and new regression tests where the supplied scope permits them. "
+            "Predictive improvement needs mature held-out outcomes, never synthetic "
             "tests or speculative parameter changes. Be concise.\nOBJECTIVE_CHECKPOINT:\n" +
             json.dumps({'criteria': objective['criteria'],
                         'tasks': [{'problem': p['payload']['problem'], 'status': p['status'],
@@ -260,7 +309,8 @@ class CodexExecutor:
             "code and relevant callers/tests, particularly changes_since_discovery. If already fixed or "
             "unsupported, report that and leave files unchanged. Do not start another project-wide audit. "
             "Keep the edit small; preserve missing-data abstention and time-correct evidence. "
-            "Do not commit or change tests, benchmarks, configuration, validation or files outside scope. "
+            "Do not commit or change existing protected tests, benchmarks, configuration, validation or files outside scope. "
+            "Approved new source and regression-test files may be created. Test the requested behavior, not merely syntax. "
             "No secrets, network, deployments, trading, service/process operations, deletion, permission "
             "changes or additional agents. The supervisor alone decides acceptance. Report evidence "
             "limitations: passing tests is not predictive or financial improvement.\n" +

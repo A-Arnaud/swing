@@ -5,7 +5,7 @@ Software Workflow for Iterative Navigation and Generation.
 Une interface pour donner un cap, voir les itérations de Ralph + Codex et reprendre
 la main. Token Radar est le premier projet connecté. L'accueil reprend la sobriété
 de la référence claire et sa typographie en caractères ; l'atelier reprend le
-terminal et les surfaces sombres lavande des deux autres références. Aucun asset,
+terminal et les surfaces sombres des deux autres références. Aucun asset,
 police ou service externe n'est chargé.
 
 ## Fonctionnement disponible
@@ -19,27 +19,41 @@ Un nouveau brief n'est pas un runtime : il n'exécute aucun code ni appel IA.
 Le bouton **Importer GitHub** propose une connexion dans le navigateur via Git
 Credential Manager, puis liste les dépôts accessibles au compte (propriétaire,
 collaborateur ou organisation), avec pagination et recherche parmi les résultats
-chargés. La saisie directe d'une URL GitHub reste disponible pour les dépôts
-publics. Les identifiants restent dans le gestionnaire du poste ; aucun jeton
+chargés. Les dépôts privés sont inclus selon les droits du compte. La saisie
+directe d'une URL GitHub reste disponible. Les identifiants restent dans le gestionnaire du poste ; aucun jeton
 n'est envoyé à l'interface, à Codex ou au runtime. Cette connexion correspond
 à la version Windows locale, pas à une plateforme hébergée avec des comptes web.
-Le dépôt et les consignes préparent un runtime indépendant. Une commande de test
-peut être détectée pour Python, npm, Go, Rust ou .NET, ou saisie explicitement.
+Le dépôt et les consignes préparent un runtime indépendant. **Importer et démarrer**
+lance Ralph sur ce runtime, après vérification du quota. Aucune commande de test
+n'est obligatoire : les manifests, scripts npm et tests Python, Go, Rust ou .NET
+préparent un ensemble de contrôles automatiquement, y compris dans les sous-projets.
+Les contrôles personnalisés restent disponibles dans les options facultatives.
 Les projets connectés sont ouverts depuis leurs cartes.
 Le choix de projet est conservé dans le navigateur et chaque API vise son runtime.
 Le code reste dans `swing-projects/<id>/source`, les preuves et sauvegardes dans
 `swing-projects/<id>/runtime`. Aucun push, installation de dépendances ou lancement
-du projet importé n'est automatique. **Reprendre** lance Ralph et revérifie le quota.
-Les tests de référence doivent réussir avant une recherche IA. Les commandes
+de l'application importée n'est automatique. **Reprendre** lance Ralph et revérifie le quota.
+Un premier appel Codex lit le README, l'architecture et des sources ciblées ;
+il conserve le but, les composants, les limites des tests et les prochaines priorités.
+Cette analyse est réutilisée : elle sert d'orientation, les faits liés à la tâche
+doivent toujours être vérifiés dans le code actuel. Les commandes
 Python chargent le code de la copie candidate avant un éventuel paquet installé.
-Les tests, configurations et secrets restent protégés ; seules les sources
-existantes reconnues sont modifiables. Les changements validés sont appliqués
+Les tests déjà présents, configurations et secrets restent protégés. Les sources
+autorisées sont modifiables et chaque tâche peut créer des sources ou des tests
+avec des chemins exacts approuvés. Les nouveaux tests deviennent protégés après
+acceptation. Une création ne remplace jamais un fichier ajouté par l'utilisateur.
+Les changements validés sont appliqués
 à la copie locale. Les outils et dépendances du projet doivent être disponibles :
 ils ne sont pas installés automatiquement. npm est résolu vers son CLI Node sans
 shell ; les autres commandes utilisent un exécutable disponible directement.
 Les sources de plusieurs langages et la documentation sont reconnues ; un dépôt
-sans sources textuelles prises en charge ou sans validation exploitable nécessite
-une configuration adaptée. Importer un dépôt ne garantit pas qu'il peut déjà
+sans tests commence par des contrôles de structure, signalés comme tels. Une
+modification de code ne peut pas être acceptée sur leur seul résultat : des tests
+de comportement doivent être ajoutés. Les échecs initiaux peuvent être réparés ;
+les contrôles finaux doivent réussir. Images et polices usuelles restent disponibles
+dans la copie candidate, protégées ; les liens et sous-modules sont exclus.
+Un dépôt vide ou sans fichiers pris en charge nécessite une préparation initiale.
+Importer un dépôt ne garantit pas qu'il peut déjà
 être compilé, testé ou amélioré sur ce poste. Les briefs restent séparés.
 
 ## Consignes : des effets vérifiables
@@ -80,6 +94,9 @@ indépendants et la lecture des changements restent les preuves du comportement.
 ## Consommation
 
 Le contexte de recherche conserve une carte compacte et six résultats récents.
+La carte est limitée à 160 fichiers, avec priorité aux points d'entrée ; les
+autres modules restent accessibles par recherches ciblées. Après l'analyse
+initiale, son résumé remplace la répétition du README complet dans chaque appel.
 L'implémentation reçoit les fichiers ciblés, leurs tests correspondants et au plus
 trois résultats pertinents. Les résultats ne sont plus dupliqués dans le prompt
 Ralph. Les consignes et le brief ne sont pas coupés pour réduire artificiellement

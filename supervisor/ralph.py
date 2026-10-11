@@ -36,6 +36,11 @@ class RalphExecutor:
             raise Blocked('objective_transport_unavailable')
         return self.transport.pursue_objective(worktree, history, base, objective)
 
+    def understand_project(self, worktree, base):
+        if not hasattr(self.transport, 'understand_project'):
+            raise Blocked('project_understanding_transport_unavailable')
+        return self.transport.understand_project(worktree, base)
+
     def implement(self, worktree, proposal):
         if self.interrupt():
             raise Blocked('manual_interrupt')

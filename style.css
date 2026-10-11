@@ -70,3 +70,8 @@
 #objective-criteria{padding-left:16px;line-height:1.6;max-width:65ch}
 #objective-criteria li{padding:3px 0;overflow-wrap:anywhere}
 #objective-reason:empty{display:none}
+#project-understanding{margin-top:9px;font-size:12px;opacity:.85;max-width:65ch}
+#project-understanding summary,.import-options summary{cursor:pointer;width:fit-content;line-height:1.6}
+#project-understanding p{margin:8px 0;line-height:1.6}
+.import-options{font-size:12px}
+.import-options label{display:block;margin:12px 0 6px}

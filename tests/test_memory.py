@@ -207,5 +207,5 @@ class BacklogTests(unittest.TestCase):
         prompt = transport.call.call_args.args[1]
         self.assertTrue(transport.call.call_args.kwargs['readonly'])
         self.assertIn('persistent project brief', prompt)
-        self.assertIn('Stop exploring once one useful defect', prompt)
+        self.assertIn('Stop exploring once one useful feature gap or defect', prompt)
         self.assertNotIn('unfiltered-history', prompt)

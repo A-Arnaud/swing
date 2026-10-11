@@ -72,8 +72,9 @@ class GitHubProjectTests(unittest.TestCase):
             with patch('github_projects.subprocess.run', side_effect=run), \
                  patch('github_projects.subprocess.check_output', side_effect=output):
                 project = import_project(default, dict(url='https://github.com/u/sample',
-                    validation='python -m unittest discover -s tests', instructions='Correct demonstrated defects.'))
+                    instructions='Create requested features and correct demonstrated defects.'))
             self.assertEqual(project['name'], 'sample')
+            self.assertEqual(project['validation'], 'Automatique')
             runtime = resolve_runtime(default, project['id'])
             supervisor = Supervisor(runtime)
             try:
@@ -81,6 +82,9 @@ class GitHubProjectTests(unittest.TestCase):
                 self.assertIn('tests/test_main.py', supervisor.config['protected_files'])
                 self.assertTrue(supervisor.config['chatgpt_quota_guard'])
                 self.assertTrue(supervisor.config['auto_promote_source'])
+                self.assertTrue(supervisor.config['allow_new_files'])
+                self.assertTrue(supervisor.config['project_onboarding'])
+                self.assertTrue((runtime / 'project-profile.json').exists())
                 self.assertFalse((runtime / 'repository/.env').exists())
                 self.assertEqual(supervisor.config['validation_argv'][0], sys.executable)
                 supervisor.original_unchanged()

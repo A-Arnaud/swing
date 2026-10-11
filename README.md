@@ -17,9 +17,11 @@ au projet reel des modifications acceptees, avec sauvegarde.
 
 Token Radar / RugsTracker est le premier projet connecte. Le bouton Importer
 GitHub permet de connecter le compte dans le navigateur, de choisir un depot
-accessible et de preparer un projet independant. La commande de test est detectee
-quand le projet le permet, ou saisie par l'utilisateur. Indiquer les consignes, puis ouvrir sa carte
-et demander la reprise de Ralph. Les changements valides restent dans la copie
+accessible, prive compris, et de preparer un projet independant. Les controles
+sont detectes automatiquement : aucune commande de test n'est obligatoire.
+Importer et demarrer lance l'analyse initiale du projet, conservee pour les
+iterations suivantes. Codex peut creer des sources et des tests, modifier et
+ameliorer selon les consignes. Les changements valides restent dans la copie
 locale du depot importe ; aucun push ou installation de dependances automatique.
 Les idees sans depot peuvent encore etre enregistrees comme briefs.
 

@@ -32,6 +32,8 @@ def status(runtime):
                       cycles=store.history(12), proposals=store.proposals())
         from supervisor.objectives import current
         result['objective'] = current(store)
+        result['project_understanding'] = store.get('project_understanding')
+        result['project_profile'] = store.get('project_profile')
         # Raw evidence and worktree paths are unnecessary for the overview.
         for cycle in result['cycles']:
             cycle.pop('worktree', None)
@@ -66,15 +68,16 @@ def changes(runtime):
             after = Path(store.get('source'))
         files = []
         for name in cycle.get('changed_files', cycle.get('proposal', {}).get('files', [])):
-            if name not in config['allowed_files']:
+            if name not in config['allowed_files'] and name not in cycle.get('new_files', []):
                 continue
             paths = [root / safe_relative(name) for root in (before, after)]
-            for path, root in zip(paths, (before, after)):
+            for index, (path, root) in enumerate(zip(paths, (before, after))):
                 path.resolve().relative_to(root.resolve())
-                plain_file(path)
-            if any(p.stat().st_size > 1_000_000 for p in paths):
+                if index == 1 or path.exists():
+                    plain_file(path)
+            if any(p.exists() and p.stat().st_size > 1_000_000 for p in paths):
                 continue
-            old, new = [p.read_text(encoding='utf-8').splitlines() for p in paths]
+            old, new = [p.read_text(encoding='utf-8').splitlines() if p.exists() else [] for p in paths]
             diff = list(difflib.unified_diff(old, new, fromfile='avant/' + name, tofile='apres/' + name, n=3))
             files.append({'name': name, 'diff': '\n'.join(diff[:400]), 'truncated': len(diff) > 400})
         return {'files': files, 'state': 'working' if active else 'applied', 'cycle': cycle['id']}

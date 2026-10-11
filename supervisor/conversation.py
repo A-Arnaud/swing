@@ -74,8 +74,9 @@ class ConversationExecutor(CodexExecutor):
                 raise Blocked('invalid_conversation_response')
             if readonly:
                 result = json.loads(answer['result'])
-                expected = {'criteria', 'proposals'} if schema and Path(schema).name == 'objective.json' else {'proposals'}
-                if not isinstance(result, dict) or set(result) != expected or not isinstance(result['proposals'], list):
+                expected = ({'purpose', 'architecture', 'testing', 'priorities'} if schema and Path(schema).name == 'project-understanding.json'
+                            else {'criteria', 'proposals'} if schema and Path(schema).name == 'objective.json' else {'proposals'})
+                if not isinstance(result, dict) or set(result) != expected or ('proposals' in expected and not isinstance(result['proposals'], list)):
                     raise Blocked('invalid_proposal_schema')
             self.check_quota(worktree)
             state['status'] = 'answered'

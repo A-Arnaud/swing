@@ -59,7 +59,7 @@ function renderReceipt(s) {
   const sent=!!receipt?.fingerprint && receipt.fingerprint===s.instructions_fingerprint;
   $('receipt-dot').classList.toggle('delivered',sent);
   $('instruction-state').textContent=!s.ralph_instructions?'Aucune consigne supplémentaire.':sent
-    ? 'Transmises à Codex à '+timeLabel(receipt.sent_at)+' · '+(receipt.stage==='implementation'?'développement':receipt.stage==='objective'?'objectif':'recherche')
+    ? 'Transmises à Codex à '+timeLabel(receipt.sent_at)+' · '+(receipt.stage==='implementation'?'développement':receipt.stage==='objective'?'objectif':receipt.stage==='understanding'?'analyse du projet':'recherche')
     : 'Enregistrées · en attente de la prochaine tâche.';
 }
 function renderHistory(cycles) {
@@ -108,6 +108,12 @@ function render(s) {
   $('objective-criteria').replaceChildren(...criteria.map(c=>element('li','',({met:'✓ ',unmet:'○ ',unknown:'? '}[c.status]||'')+c.criterion)));
   const reasons={objective_needs_evidence_or_scope:'Il manque une preuve ou une autorisation dans le périmètre du projet.',objective_waiting_for_approval_or_scope:'Une tâche attend une approbation ou un périmètre adapté.',objective_transport_unavailable:'Le transport configuré ne prend pas en charge les objectifs.',independent_validation_failed:'Les contrôles indépendants échouent. L’objectif reste ouvert.',instructions_changed_before_task:'Les consignes ont changé. Le plan sera renouvelé.',manual_interrupt:'Travail interrompu. Le plan est conservé.',chatgpt_quota_exhausted:'Quota atteint. Le plan est conservé.'};
   $('objective-reason').textContent=reasons[objective?.reason]||'';
+  const profile=s.project_profile, understanding=s.project_understanding;
+  $('project-understanding').classList.toggle('hidden',!profile);
+  $('understanding-label').textContent=understanding?'Projet analysé':profile?'Analyse à la première itération':'';
+  $('understanding-purpose').textContent=understanding?.purpose||[...(profile?.languages||[]),...(profile?.frameworks||[])].join(' · ');
+  $('understanding-architecture').textContent=understanding?.architecture||'';
+  $('understanding-checks').textContent=understanding?.testing||(profile?.validation_level==='structural'?'Contrôles de structure · tests de comportement à créer':'Tests et contrôles détectés automatiquement');
   const steps=['discover','implement','verify','apply'];let step=-1;
   if(running){step=/travaille/i.test(s.phase)?1:/indépendants|contrôle des modifications/i.test(s.phase)?2:/application|sauvegarde/i.test(s.phase)?3:0;}
   document.querySelectorAll('[data-step]').forEach(el=>{const index=steps.indexOf(el.dataset.step);el.classList.toggle('active',index===step);el.classList.toggle('done',step>index);});
@@ -290,14 +296,16 @@ $('github-form').addEventListener('submit',async event=>{
   event.preventDefault();$('github-submit').disabled=true;$('github-feedback').textContent='Clonage et préparation…';
   try{
     const project=await api('/api/github/import',{url:$('github-url').value,validation:$('github-validation').value,instructions:$('github-instructions').value});
-    $('github-dialog').close();toast('Dépôt importé. Prêt pour les consignes et les tests.');await loadProjects();await openConnectedProject(project.id);
+    $('github-dialog').close();toast('Dépôt importé.');await loadProjects();await openConnectedProject(project.id);
+    try{await api('/api/start',{});toast('Ralph démarre par l’analyse du projet.');await refresh();}
+    catch{toast('Projet importé. Démarrage indisponible : utilisez Reprendre.');}
   }catch(error){
     const reasons={github_https_url_required:'Utilisez une URL https://github.com/compte/projet.',github_clone_failed_check_access:'Clonage impossible. Vérifiez le dépôt et votre accès GitHub.',validation_executable_required:'Outil de test absent du poste. Installez-le ou indiquez un autre exécutable.',npm_runtime_required:'Node et npm doivent être installés.',validation_command_required:'Commande non détectée. Indiquez la commande de test de ce projet.',no_supported_editable_source:'Aucun fichier source modifiable reconnu.',repository_contains_credentials:'Des identifiants sont présents dans le dépôt. Retirez-les avant l’import.'};
     $('github-feedback').textContent=reasons[error.message]||'Import impossible : '+error.message;
   }finally{$('github-submit').disabled=false;}
 });
 
-let githubRepos=[],githubNext=1,githubLoading=false,githubAccountPending=false;
+let githubRepos=[],githubNext=1,githubLoading=false,githubAccountPending=false,githubLogin=null,githubAccountVersion=0;
 function renderGitHubRepositories(){
   const query=$('github-search').value.toLowerCase().trim();
   const rows=githubRepos.filter(repo=>repo.name.toLowerCase().includes(query)).map(repo=>{
@@ -311,9 +319,11 @@ function renderGitHubRepositories(){
 }
 async function loadGitHubRepositories(reset=false){
   if(githubLoading)return;githubLoading=true;
+  const version=githubAccountVersion;
   if(reset){githubRepos=[];githubNext=1;}
   try{
     const data=await api('/api/github/repositories?page='+(githubNext||1));
+    if(version!==githubAccountVersion)return;
     const known=new Set(githubRepos.map(r=>r.url));githubRepos.push(...data.repositories.filter(r=>!known.has(r.url)));githubNext=data.next_page;
     renderGitHubRepositories();
   }catch{$('github-feedback').textContent='Impossible de lire les dépôts. Vérifiez la connexion GitHub.';}
@@ -323,17 +333,18 @@ async function refreshGitHubAccount(){
   if(githubAccountPending)return;githubAccountPending=true;
   try{
     const account=await api('/api/github/account');
+    if(account.connected && account.login!==githubLogin){githubLogin=account.login;githubRepos=[];githubNext=1;githubAccountVersion++;}
     $('github-account-state').textContent=account.connecting?'Terminez la connexion dans le navigateur.':account.connected?'Connecté : '+account.login:'Compte non connecté';
     $('github-connect').textContent=account.connected?'Reconnecter':'Connecter GitHub';$('github-connect').disabled=account.connecting;
-    $('github-browser').classList.toggle('hidden',!account.connected);
-    if(account.connected && !githubRepos.length)await loadGitHubRepositories(true);
+    $('github-browser').classList.toggle('hidden',!account.connected || account.connecting);
+    if(account.connected && !account.connecting && !githubRepos.length)await loadGitHubRepositories(true);
     if(account.error)$('github-feedback').textContent='Connexion interrompue. Vous pouvez réessayer.';
   }catch{$('github-account-state').textContent='Connexion GitHub indisponible';}
   finally{githubAccountPending=false;}
 }
 $('github-connect').addEventListener('click',async()=>{
   $('github-connect').disabled=true;
-  try{await api('/api/github/connect',{});githubRepos=[];$('github-account-state').textContent='Terminez la connexion dans le navigateur.';}
+  try{await api('/api/github/connect',{});githubRepos=[];githubAccountVersion++;$('github-account-state').textContent='Terminez la connexion dans le navigateur.';}
   catch{$('github-feedback').textContent='Connexion impossible. Git Credential Manager doit être installé sur le poste.';$('github-connect').disabled=false;}
 });
 $('github-search').addEventListener('input',renderGitHubRepositories);

@@ -107,11 +107,21 @@ def context(worktree, config, store, base, focus=None, guidance=None):
         mapped = {n: v for n, v in memory['files'].items() if n in scope}
         references = ['README.md', 'STATUS.md', 'docs/', 'tests/ (match the module)', 'specifications/']
         recent = memory['recent_results'][:6]
+    total_mapped = len(mapped)
+    if not focus:
+        entries = set(store.get('project_profile', {}).get('entrypoints', []))
+        ranked = sorted(mapped, key=lambda name: (name not in entries, name.endswith(('.md', '.rst')), name))
+        mapped = {name: mapped[name] for name in ranked[:160]}
     module_map = '\n'.join(n + ': ' + v['summary'][:160 if focus else 90] for n, v in mapped.items())
+    if len(mapped) < total_mapped:
+        module_map += f'\nCompact map: {len(mapped)}/{total_mapped} files. Use targeted repository searches for other relevant modules.'
     guidance = guidance or snapshot(store)
     compact_results = [{'state': r['status'], 'task': r['task'][:180], 'files': r['files'],
                         'checks': r['checks_passed'], 'reason': r['reason']} for r in recent]
-    return ('PROJECT BRIEF (orientation; verify task-specific facts in current code):\n' + memory['brief'] +
+    brief = memory['brief']
+    if store.get('project_understanding'):
+        brief = brief.split('\n\nREADME context:', 1)[0]
+    return ('PROJECT BRIEF (orientation; verify task-specific facts in current code):\n' + brief +
             '\n' + ('TASK FILES' if focus else 'EDITABLE MODULE MAP') + ':\n' + module_map +
             '\nREAD-ONLY REFERENCES (open only the relevant sections):\n' + json.dumps(references) +
             '\nVERIFIED SUPERVISOR RESULTS (checks only; not proof of predictive lift):\n' +

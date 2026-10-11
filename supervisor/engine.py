@@ -162,7 +162,7 @@ class Supervisor:
             if current != self.store.get("source_manifest"):
                 raise Blocked("original_project_changed_reimport_required")
 
-    def verify(self, worktree):
+    def verify(self, worktree, strict=True):
         if not self.config["validation_argv"]:
             raise Blocked("validation_not_configured")
         start = time.perf_counter()
@@ -171,7 +171,12 @@ class Supervisor:
         # Do not publish output that might contain secrets or untrusted file content.
         result = {"exit_code": code, "elapsed_ms": round((time.perf_counter() - start) * 1000, 3),
                   "output_sha256": digest(stdout + stderr)}
-        if code:
+        if len(self.config['validation_argv']) >= 4 and Path(self.config['validation_argv'][3]).resolve() == Path(__file__).resolve().parents[1] / 'automatic_checks.py' and not code:
+            try:
+                result['check_level'] = json.loads(stdout.splitlines()[-1])['level']
+            except (ValueError, KeyError, IndexError, TypeError):
+                raise Blocked('automatic_validation_result_missing') from None
+        if code and strict:
             raise Blocked("independent_validation_failed")
         return result
 
@@ -205,6 +210,7 @@ class Supervisor:
         candidates = []
         base = git(self.repo, "rev-parse", "validated")
         entries = self.store.proposals()
+        from .creation import task_paths_allowed
         states = {p['id']: p['status'] for p in entries}
         for entry in entries:
             proposal = entry["payload"]
@@ -222,7 +228,7 @@ class Supervisor:
                 continue
             if entry['status'] == 'deferred_instructions':
                 self.store.proposal_state(entry['id'], 'queued')
-            if any(name not in self.config["allowed_files"] for name in proposal["files"]):
+            if not task_paths_allowed(proposal, self.config):
                 self.store.proposal_state(entry["id"], "outside_trusted_scope")
                 continue
             if proposal["base"] != base:
@@ -283,8 +289,17 @@ class Supervisor:
                 git(self.repo, "worktree", "add", "-b", branch, str(worktree), base)
                 report.update(branch=branch, worktree=str(worktree))
                 protected = tree_hash(worktree, self.config["protected_files"])
+                if self.config.get('project_onboarding') and not self.store.get('project_understanding'):
+                    self.phase("Compréhension du projet importé")
+                    if not hasattr(self.executor, 'understand_project'):
+                        raise Blocked('project_understanding_transport_unavailable')
+                    understanding = self.executor.understand_project(worktree, base)
+                    if git(worktree, 'status', '--porcelain') or git(worktree, 'rev-parse', 'HEAD') != base or tree_hash(worktree, self.config['protected_files']) != protected:
+                        raise Blocked('project_understanding_modified_source')
+                    self.store.set('project_understanding', understanding)
                 self.phase("Vérification du projet avant modification")
-                report["before_validation"] = self.verify(worktree)
+                report["before_validation"] = self.verify(worktree, strict=False) if self.config.get('allow_repair_baseline') else self.verify(worktree)
+                self.store.set('baseline_checks', report['before_validation'])
                 report["before_measurement"] = self.measure(worktree)
                 from .objectives import complete, sync
                 objective = sync(self.store)
@@ -342,6 +357,9 @@ class Supervisor:
                 if proposal is None:
                     raise Blocked('objective_needs_evidence_or_scope' if pursuing else "no_new_validated_hypothesis")
                 report["proposal"] = proposal
+                from .creation import inspect_new_paths
+                new_files = inspect_new_paths(proposal, self.config, worktree, self.store.get('source'))
+                report['new_files'] = new_files
                 if pursuing:
                     objective.update(state='active', reason='')
                     self.store.set('operator_objective', objective)
@@ -361,7 +379,13 @@ class Supervisor:
                     raise Blocked("validation_contract_modified")
                 before, after = report["before_measurement"], report["after_measurement"]
                 if self.config.get("acceptance_mode", "benchmark") == "application_checks":
-                    report["acceptance"] = "independent_application_tests_and_lint"
+                    level = report['after_validation'].get('check_level', self.config.get('validation_level'))
+                    from .creation import EXTENSIONS
+                    code_extensions = EXTENSIONS - {'.md', '.rst', '.css', '.scss', '.html', '.svg'}
+                    if level == 'structural' and any(Path(name).suffix.lower() in code_extensions for name in report['changed_files']):
+                        raise Blocked('behavioral_tests_required')
+                    report["acceptance"] = ('independent_structural_checks' if level == 'structural'
+                                            else "independent_application_tests_and_lint")
                 else:
                     if not before or not after or before["metric"] != after["metric"]:
                         raise Blocked("measurable_acceptance_not_configured")
@@ -388,6 +412,8 @@ class Supervisor:
                 git(self.repo, "merge", "--ff-only", branch)
                 backup(self.repo, self.root / "backups" / (id + "-after.bundle"))
                 report.update(status="accepted_in_snapshot", commit=commit)
+                if new_files:
+                    self.config['allowed_files'] = list(dict.fromkeys(self.config['allowed_files'] + new_files))
                 if self.config.get("auto_promote_source", False):
                     from .promotion import promote
                     try:
@@ -397,6 +423,16 @@ class Supervisor:
                         self.store.set("control", {"mode": "stopped", "reason": "source_promotion_failed"})
                         raise
                 self.store.proposal_state(proposal["id"], "accepted")
+                if new_files:
+                    from .creation import is_test_path
+                    new_tests = [name for name in new_files if is_test_path(name)]
+                    self.config['allowed_files'] = [name for name in self.config['allowed_files'] if name not in new_tests]
+                    self.config['protected_files'] = list(dict.fromkeys(self.config['protected_files'] + new_tests))
+                    if self.config.get('source_files') is not None:
+                        self.config['source_files'] = list(dict.fromkeys(self.config['source_files'] + new_files))
+                    temporary = self.root / 'config.tmp'
+                    temporary.write_text(json.dumps(self.config, indent=2), encoding='utf-8')
+                    temporary.replace(self.root / 'config.json')
                 self.store.set("no_progress", 0)
                 self.store.set("blocked_windows", 0)
             except ObjectiveVerified:
@@ -467,9 +503,10 @@ class Supervisor:
         interval = self.config['interval_seconds']
         if self.store.get('control', {}).get('mode') != 'running':
             return interval
+        from .creation import task_paths_allowed
         backlog = any(p['status'] == 'queued' and
                       p['attempts'] < self.config['max_attempts_per_proposal'] and
-                      all(f in self.config['allowed_files'] for f in p['payload']['files']) and
+                      task_paths_allowed(p['payload'], self.config) and
                       (p['payload']['risk'] == 'low' or self.store.get('approval:' + p['id'], False))
                       for p in self.store.proposals())
         if backlog or result['status'] in {'accepted_in_snapshot', 'objective_verified'}:

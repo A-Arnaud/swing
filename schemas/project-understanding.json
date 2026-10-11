@@ -1,0 +1,28 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "purpose",
+    "architecture",
+    "testing",
+    "priorities"
+  ],
+  "properties": {
+    "purpose": {
+      "type": "string"
+    },
+    "architecture": {
+      "type": "string"
+    },
+    "testing": {
+      "type": "string"
+    },
+    "priorities": {
+      "type": "array",
+      "maxItems": 3,
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

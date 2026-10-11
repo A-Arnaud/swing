@@ -31,6 +31,18 @@ class GitHubAccountTests(unittest.TestCase):
             self.assertEqual(spawn.call_count, 1)
             self.assertIn('--browser', spawn.call_args.args[0])
 
+    def test_completed_login_refreshes_previously_cached_account(self):
+        import time
+        account = GitHubAccount()
+        account.cached = {'connected': True, 'login': 'previous'}
+        account.checked = time.monotonic()
+        account.process = Mock(returncode=0)
+        account.process.poll.return_value = 0
+        with patch('github_account.request', return_value={'login': 'current'}) as request:
+            self.assertEqual(account.status()['login'], 'current')
+            self.assertEqual(account.status()['login'], 'current')
+            request.assert_called_once()
+
     def test_repository_projection_and_pagination(self):
         rows = [{'full_name': f'owner/r{i}', 'html_url': f'https://github.com/owner/r{i}',
                  'private': True, 'permissions': {'pull': True}} for i in range(100)]

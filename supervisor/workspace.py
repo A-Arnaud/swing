@@ -6,6 +6,7 @@ from .safety import Blocked, digest, forbidden, git, plain_file, safe_relative, 
 TOP_FILES = {"README.md", "STATUS.md", "pyproject.toml", "requirements.lock", "requirements-research.lock",
              "Dockerfile", "docker-compose.yml", "mission.txt", "mission2.txt", ".env.example"}
 TOP_DIRS = {"src", "tests", "docs", "specifications", "scripts", "migrations", "examples"}
+ASSET_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.woff', '.woff2', '.ttf', '.otf', '.avif'}
 
 
 def collect(source, selected=None):
@@ -26,7 +27,7 @@ def collect(source, selected=None):
                     break
                 plain_file(parent)
             data = path.read_bytes()
-            if len(data) > 2_000_000 or b'\0' in data or secret_like(data):
+            if len(data) > 2_000_000 or (b'\0' in data and path.suffix.lower() not in ASSET_EXTENSIONS) or secret_like(data):
                 raise Blocked('snapshot_content_requires_review')
             total += len(data)
             if total > 25_000_000:

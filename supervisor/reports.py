@@ -72,7 +72,9 @@ def _render(supervisor):
         sections = []
         if worktree.is_dir():
             for name in (active.get("proposal") or {}).get("files", []):
-                if name not in allowed or not re.fullmatch(r"[A-Za-z0-9_./-]{1,180}", name):
+                if name not in allowed and name not in active.get('new_files', []):
+                    continue
+                if not re.fullmatch(r"[A-Za-z0-9_./-]{1,180}", name):
                     continue
                 old, new = base_tree / name, worktree / name
                 try:
@@ -81,9 +83,9 @@ def _render(supervisor):
                     else:
                         old.resolve().relative_to((supervisor.root / "backups").resolve())
                     new.resolve().relative_to(worktree.resolve())
-                    if not old.is_file() or not new.is_file() or old.is_symlink() or new.is_symlink():
+                    if not new.is_file() or old.is_symlink() or new.is_symlink():
                         continue
-                    diff = list(difflib.unified_diff(old.read_text(encoding="utf-8").splitlines(),
+                    diff = list(difflib.unified_diff(old.read_text(encoding="utf-8").splitlines() if old.exists() else [],
                                                     new.read_text(encoding="utf-8").splitlines(),
                                                     fromfile="validated/" + name,
                                                     tofile="Codex-worktree/" + name, lineterm="", n=2))

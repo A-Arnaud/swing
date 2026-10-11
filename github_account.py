@@ -39,10 +39,15 @@ class GitHubAccount:
         self.lock = threading.Lock()
         self.cached = None
         self.checked = 0
+        self.process_completed = False
 
     def status(self):
         with self.lock:
             connecting = bool(self.process and self.process.poll() is None)
+            if self.process and not connecting and not self.process_completed:
+                self.cached = None
+                self.checked = 0
+                self.process_completed = True
             if self.cached is None or time.monotonic() - self.checked > 15:
                 try:
                     user = request('/user')
@@ -67,6 +72,7 @@ class GitHubAccount:
                 creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
             self.cached = None
             self.checked = 0
+            self.process_completed = False
             return {'status': 'connecting'}
 
 
