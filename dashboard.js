@@ -432,3 +432,18 @@ async function loadRepository(){
 $('repo-branch').addEventListener('change',()=>{repoBranch=$('repo-branch').value;repositoryPath();});
 $('repo-refresh').addEventListener('click',()=>{repoSignature='';loadRepository();});
 setInterval(()=>{if(!document.hidden&&currentView==='files'&&!$('workspace').classList.contains('hidden'))loadRepository();},4000);
+
+$('download-zip').addEventListener('click',async()=>{
+  const button=$('download-zip'),project=activeProject,version=projectVersion;button.disabled=true;button.textContent='Préparation…';
+  try{
+    const response=await fetch('/api/export'+(project?'?project='+encodeURIComponent(project):''),{cache:'no-store'});
+    if(!response.ok){const result=await response.json();throw new Error(result.error||'export_unavailable');}
+    const blob=await response.blob();const url=URL.createObjectURL(blob);
+    const link=element('a');link.href=url;link.download=response.headers.get('Content-Disposition')?.match(/filename="([^"]+)"/)?.[1]||'projet.zip';
+    document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
+    if(version===projectVersion)toast('ZIP téléchargé.');
+  }catch(error){
+    const reasons={export_source_busy:'Le code est en cours de modification. Réessayez dans quelques secondes.',export_size_limit:'Projet trop volumineux pour cet export.',export_empty:'Aucun fichier à exporter.'};
+    if(version===projectVersion)toast(reasons[error.message]||'Téléchargement impossible. Réessayez.');
+  }finally{button.disabled=false;button.textContent='Télécharger ZIP ↓';}
+});

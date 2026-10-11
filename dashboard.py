@@ -15,6 +15,7 @@ from dashboard_data import status, changes, projects, save_project
 from github_projects import import_project, resolve_runtime
 from github_account import GitHubAccount, repositories
 from repository_browser import browse
+from project_export import archive
 
 
 def serve(runtime):
@@ -44,10 +45,12 @@ def serve(runtime):
             expected = f'127.0.0.1:{self.server.server_port}'
             return self.client_address[0] in {'127.0.0.1', '::1'} and host == expected
 
-        def send_bytes(self, payload, content_type, status=200):
+        def send_bytes(self, payload, content_type, status=200, filename=None):
             self.send_response(status)
             self.send_header('Content-Type', content_type)
             self.send_header('Content-Length', str(len(payload)))
+            if filename:
+                self.send_header('Content-Disposition', f'attachment; filename="{filename}"')
             self.send_header('Cache-Control', 'no-store')
             self.send_header('X-Content-Type-Options', 'nosniff')
             self.send_header('Content-Security-Policy', "default-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self'; frame-src 'self'; base-uri 'none'; form-action 'self'")
@@ -99,6 +102,13 @@ def serve(runtime):
                 summary['start_error'] = None
                 payload = json.dumps(summary, ensure_ascii=False).encode('utf-8')
                 self.send_bytes(payload, 'application/json; charset=utf-8')
+            elif route == '/api/export':
+                try:
+                    filename, payload = archive(selected)
+                    self.send_bytes(payload, 'application/zip', filename=filename)
+                except (OSError, ValueError, RuntimeError) as error:
+                    reason = str(error) if isinstance(error, RuntimeError) else 'export_unavailable'
+                    self.send_bytes(json.dumps({'error': reason}).encode(), 'application/json', 409)
             elif route == '/api/repository':
                 try:
                     query = parse_qs(urlsplit(self.path).query)
