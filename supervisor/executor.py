@@ -161,7 +161,7 @@ class CodexExecutor:
             raise Blocked("codex_call_failed_or_usage_unknown")
         return final
 
-    def project_context(self, worktree, base, focus=None, expected_fingerprint=None):
+    def project_context(self, worktree, base, focus=None, expected_fingerprint=None, include_objective=True):
         from .memory import context
         from .guidance import snapshot
         guidance = snapshot(self.store)
@@ -169,12 +169,21 @@ class CodexExecutor:
             raise Blocked('instructions_changed_before_task')
         self._context_receipt = {k: guidance[k] for k in ('fingerprint', 'has_instructions')}
         self._context_receipt['stage'] = 'implementation' if focus else 'discovery'
-        return context(worktree, self.config, self.store, base, focus, guidance)
+        text = context(worktree, self.config, self.store, base, focus, guidance)
+        from .objectives import current
+        objective = current(self.store)
+        if include_objective and objective and objective['criteria']:
+            text += '\nOPERATOR_ACCEPTANCE_CRITERIA:\n' + json.dumps(
+                [{'criterion': c['criterion'], 'status': c['status']} for c in objective['criteria']],
+                ensure_ascii=False, separators=(',', ':'))
+        return text
 
     def discover(self, worktree, history, base):
         prompt = (
-            "Use the persistent project brief and verified results below. Do not restart a general audit "
-            "or reread every specification. Pick one priority area from the brief and current guidance; "
+            "Use the persistent project brief and verified results below. Do not restart a general audit, "
+            "reread every specification or reopen completed operator criteria. If those criteria are met, preserve their outcomes "
+            "and look for other justified improvements consistent with the operator's constraints. "
+            "Pick one priority area from the brief and current guidance; "
             "inspect its source, callers and relevant tests. Stop exploring once one useful defect is "
             "reproduced. Return that proposal and up to two adjacent, already evidenced tasks for the "
             "persistent queue; do not spend extra time filling the queue. Return [] if none is justified. "
@@ -201,6 +210,49 @@ class CodexExecutor:
             proposal['instructions_fingerprint'] = fingerprint
             proposals.append(proposal)
         return proposals
+
+    def pursue_objective(self, worktree, history, base, objective):
+        from .guidance import snapshot
+        from .objectives import validate_assessment
+        from .safety import digest
+        prompt = (
+            "Work ONLY toward the operator's current instructions. Do not search for unrelated "
+            "improvements. On the first checkpoint, translate ALL requested outcomes and constraints "
+            "into 1-8 concrete, observable acceptance criteria, preserving the user's intent. "
+            "Subsequent checkpoints MUST keep exactly the same criterion texts and order. Assess "
+            "each criterion as met, unmet or unknown on this baseline. Provide precise code/test "
+            "locations and behavioral evidence, not a promise or merely 'tests pass'. Unknown "
+            "requirements, unavailable data and outcomes outside the editable scope remain unknown. "
+            "Never replace a difficult requirement with an easier one or claim perfection. "
+            "Return up to three evidenced, small tasks in dependency order that close unmet criteria; "
+            "reuse the completed work below rather than restarting an audit. Each task must name "
+            "the criterion it serves in success_metric. Return no unrelated tasks. When all criteria "
+            "are met, return no tasks; independent checks will still decide the checkpoint. "
+            "Read only: no edits, secrets, network, services, trading, deployment, deletion, permission "
+            "changes or additional agents. Existing tests, dependencies and configuration are "
+            "protected. Predictive improvement needs mature held-out outcomes, never synthetic "
+            "tests or speculative parameter changes. Be concise.\nOBJECTIVE_CHECKPOINT:\n" +
+            json.dumps({'criteria': objective['criteria'],
+                        'tasks': [{'problem': p['payload']['problem'], 'status': p['status'],
+                                   'acceptance': p['payload']['success_metric']}
+                                  for p in self.store.proposals()
+                                  if p['payload'].get('objective_fingerprint') == objective['fingerprint']][-12:]},
+                       ensure_ascii=False, separators=(',', ':')) + '\n' +
+            self.project_context(worktree, base, expected_fingerprint=objective['fingerprint'], include_objective=False))
+        self._context_receipt['stage'] = 'objective'
+        schema = Path(__file__).resolve().parent.parent / 'schemas/objective.json'
+        result = json.loads(self.call(worktree, prompt, schema, readonly=True))
+        if snapshot(self.store)['fingerprint'] != objective['fingerprint']:
+            raise Blocked('instructions_changed_before_task')
+        criteria = validate_assessment(result, objective, worktree, self.config)
+        proposals = []
+        for index, item in enumerate(result['proposals']):
+            proposal = validate_proposal(item, base)
+            proposal.update(id=digest((proposal['id'] + objective['fingerprint']).encode())[:24],
+                            instructions_fingerprint=objective['fingerprint'],
+                            objective_fingerprint=objective['fingerprint'], objective_order=index)
+            proposals.append(proposal)
+        return criteria, proposals
 
     def implement(self, worktree, proposal):
         prompt = (

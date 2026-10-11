@@ -7,6 +7,7 @@ import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+from .objectives import current
 
 _render_lock = threading.Lock()
 
@@ -27,6 +28,7 @@ def _render(supervisor):
                "conversation_task": store.get("conversation_task"),
                "phase": store.get("phase", "En attente"),
                "memory_status": store.get("memory_status"),
+               "objective": current(store),
                "next_cycle_at": store.get("next_cycle_at"),
                "model_calls": store.db.execute("SELECT count(*) FROM calls").fetchone()[0],
                "production_promotion": "automatic_after_checks" if supervisor.config.get("auto_promote_source") else "manual_only_not_implemented",

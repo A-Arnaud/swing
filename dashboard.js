@@ -1,6 +1,6 @@
 'use strict';
 const $ = id => document.getElementById(id);
-const labels = {running:'En cours',stopped:'À l’arrêt',paused:'En pause',auto_paused:'Pause automatique',accepted_in_snapshot:'Validé',rejected:'Non retenu',interrupted:'Interrompu'};
+const labels = {running:'En cours',stopped:'À l’arrêt',paused:'En pause',auto_paused:'Pause automatique',accepted_in_snapshot:'Validé',objective_verified:'Consignes vérifiées',rejected:'Non retenu',interrupted:'Interrompu'};
 let activeProject = localStorage.getItem('swing-project') || '', projectVersion = 0;
 let state = null, currentView = 'activity', instructionDirty = false, busy = false, fetching = false, firstLoad = true;
 let lastPhase = '', lastCalls = null, lastCycle = '', lastCycleState = '', historySignature = '', toastTimer;
@@ -59,7 +59,7 @@ function renderReceipt(s) {
   const sent=!!receipt?.fingerprint && receipt.fingerprint===s.instructions_fingerprint;
   $('receipt-dot').classList.toggle('delivered',sent);
   $('instruction-state').textContent=!s.ralph_instructions?'Aucune consigne supplémentaire.':sent
-    ? 'Transmises à Codex à '+timeLabel(receipt.sent_at)+' · '+(receipt.stage==='implementation'?'développement':'recherche')
+    ? 'Transmises à Codex à '+timeLabel(receipt.sent_at)+' · '+(receipt.stage==='implementation'?'développement':receipt.stage==='objective'?'objectif':'recherche')
     : 'Enregistrées · en attente de la prochaine tâche.';
 }
 function renderHistory(cycles) {
@@ -67,7 +67,7 @@ function renderHistory(cycles) {
   if(signature===historySignature)return;historySignature=signature;
   const rows=cycles.map(c=>{
     const row=element('article','event '+c.status);const body=element('div','event-body');
-    body.append(element('div','event-title',c.proposal?.problem || 'Recherche de pistes'));
+    body.append(element('div','event-title',c.proposal?.problem || (c.proposal_source==='objective'?'Bilan des consignes':'Recherche de pistes')));
     const notes=[labels[c.status]||c.status,c.proposal_source==='backlog'?'Piste conservée':null,
       c.implementation_seconds!=null?'Code : '+Math.round(c.implementation_seconds)+' s':null,
       c.discovery_seconds!=null?'Recherche : '+Math.round(c.discovery_seconds)+' s':null,
@@ -98,8 +98,16 @@ function render(s) {
   let phase=s.phase||'Prêt à commencer.';
   if(stopped) phase=control.reason==='chatgpt_quota_exhausted'?'Quota atteint · Ralph arrêté':s.start_error?'Démarrage bloqué : '+s.start_error:'Ralph arrêté';
   $('phase').textContent=phase;
-  const queue=(s.proposals||[]).filter(p=>p.status==='queued').sort((a,b)=>b.payload.impact/b.payload.cost-a.payload.impact/a.payload.cost);
-  $('next-task').textContent=running && cycle?.proposal?'Tâche ciblée · '+(cycle.proposal.files||[]).map(x=>x.split('/').pop()).join(', '):queue.length?queue.length+' pistes en attente':cycle?.status==='accepted_in_snapshot'?'Dernière avancée : '+(cycle.changed_files||[]).map(x=>x.split('/').pop()).join(', '):'';
+  const objective=s.objective, criteria=objective?.criteria||[];
+  const pursuing=objective && objective.state!=='completed';
+  const queue=(s.proposals||[]).filter(p=>p.status==='queued' && (!pursuing || p.payload.objective_fingerprint===objective.fingerprint));
+  $('next-task').textContent=running && cycle?.proposal?'Tâche ciblée · '+(cycle.proposal.files||[]).map(x=>x.split('/').pop()).join(', '):queue.length?queue.length+' tâches en attente':cycle?.status==='accepted_in_snapshot'?'Dernière avancée : '+(cycle.changed_files||[]).map(x=>x.split('/').pop()).join(', '):'';
+  $('objective-progress').classList.toggle('hidden',!objective);
+  $('objective-label').textContent=objective?({planning:'Préparer les consignes',active:'Priorité aux consignes',blocked:'Objectif bloqué',completed:'Consignes vérifiées · améliorations libres'}[objective.state]||'Consignes'):'';
+  $('objective-count').textContent=criteria.length?criteria.filter(c=>c.status==='met').length+' / '+criteria.length:'';
+  $('objective-criteria').replaceChildren(...criteria.map(c=>element('li','',({met:'✓ ',unmet:'○ ',unknown:'? '}[c.status]||'')+c.criterion)));
+  const reasons={objective_needs_evidence_or_scope:'Il manque une preuve ou une autorisation dans le périmètre du projet.',objective_waiting_for_approval_or_scope:'Une tâche attend une approbation ou un périmètre adapté.',objective_transport_unavailable:'Le transport configuré ne prend pas en charge les objectifs.',independent_validation_failed:'Les contrôles indépendants échouent. L’objectif reste ouvert.',instructions_changed_before_task:'Les consignes ont changé. Le plan sera renouvelé.',manual_interrupt:'Travail interrompu. Le plan est conservé.',chatgpt_quota_exhausted:'Quota atteint. Le plan est conservé.'};
+  $('objective-reason').textContent=reasons[objective?.reason]||'';
   const steps=['discover','implement','verify','apply'];let step=-1;
   if(running){step=/travaille/i.test(s.phase)?1:/indépendants|contrôle des modifications/i.test(s.phase)?2:/application|sauvegarde/i.test(s.phase)?3:0;}
   document.querySelectorAll('[data-step]').forEach(el=>{const index=steps.indexOf(el.dataset.step);el.classList.toggle('active',index===step);el.classList.toggle('done',step>index);});

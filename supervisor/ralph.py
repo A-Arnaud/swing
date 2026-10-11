@@ -31,6 +31,11 @@ class RalphExecutor:
         # Discovery is outside Ralph's finite PRD: completed stories do not end supervision.
         return self.transport.discover(worktree, history, base)
 
+    def pursue_objective(self, worktree, history, base, objective):
+        if not hasattr(self.transport, 'pursue_objective'):
+            raise Blocked('objective_transport_unavailable')
+        return self.transport.pursue_objective(worktree, history, base, objective)
+
     def implement(self, worktree, proposal):
         if self.interrupt():
             raise Blocked('manual_interrupt')

@@ -44,9 +44,30 @@ une configuration adaptée. Importer un dépôt ne garantit pas qu'il peut déj�
 
 ## Consignes : des effets vérifiables
 
+Des consignes non vides deviennent un objectif persistant. Un premier bilan
+définit des critères observables et jusqu'à trois tâches en ordre de dépendance.
+Ralph exécute ces tâches avant toute recherche générale, puis fait un nouveau
+bilan sur le code validé. Les critères restent identiques jusqu'à un changement
+des consignes : il ne peut pas les supprimer pour déclarer le travail terminé.
+Le plan, les tâches et le bilan survivent à une reprise. La recherche générale
+commence seulement après des preuves pour chaque critère et un contrôle
+indépendant réussi. Aucun changement artificiel n'est demandé pour ce bilan.
+
+Une liste vide, des données manquantes, un périmètre insuffisant ou une tâche
+attendant approbation ne valent pas réussite. Sans prochaine tâche justifiable,
+la boucle s'arrête sur cet objectif plutôt que de consommer du quota ailleurs.
+L'interface expose les critères et l'état de l'objectif dans un détail compact.
+« Consignes vérifiées » décrit le bilan du modèle et les contrôles configurés ;
+ce n'est pas une garantie de perfection ni une preuve de rentabilité. Des tests
+généraux ne couvrent pas nécessairement chaque exigence en langage naturel.
+
+Le modèle reçoit un contexte ciblé pour chaque tâche. Un bilan est demandé
+seulement lorsque la file de l'objectif est vide, jamais à chaque itération.
+Les gardes de quota et les protections existantes s'appliquent aussi aux bilans.
+
 Les propositions issues de Codex portent l'empreinte des consignes utilisées.
-Si les consignes changent, les anciennes pistes passent en attente et une nouvelle
-recherche reçoit la nouvelle intention. Elles ne sont pas supprimées. Les pistes
+Si les consignes changent, les anciennes pistes passent en attente et un nouvel
+objectif reçoit la nouvelle intention. Elles ne sont pas supprimées. Les pistes
 sans anciennes consignes peuvent être réutilisées lorsque les consignes sont vides.
 La concurrence entre sélection et préparation d'un appel bloque la tâche obsolète.
 Le périmètre autorisé, les tests et le quota restent imposés par le superviseur.

@@ -36,6 +36,10 @@ DEMO_FILES = {
 }
 
 
+class ObjectiveVerified(Exception):
+    """A verified checkpoint ends this cycle without an artificial code edit."""
+
+
 @contextlib.contextmanager
 def exclusive(root, filename="supervisor.lock"):
     path = root / filename
@@ -195,15 +199,26 @@ class Supervisor:
 
     def choose(self):
         from .guidance import matches, snapshot
+        from .objectives import current
         guidance = snapshot(self.store)
+        objective = current(self.store) if self.store.get('operator_objective') else None
         candidates = []
         base = git(self.repo, "rev-parse", "validated")
-        for entry in self.store.proposals():
+        entries = self.store.proposals()
+        states = {p['id']: p['status'] for p in entries}
+        for entry in entries:
             proposal = entry["payload"]
             if entry["status"] not in {"queued", "deferred_instructions"} or entry["attempts"] >= self.config["max_attempts_per_proposal"]:
                 continue
             if not matches(proposal, guidance):
                 self.store.proposal_state(entry['id'], 'deferred_instructions')
+                continue
+            if objective and objective['state'] != 'completed' and proposal.get('objective_fingerprint') != objective['fingerprint']:
+                continue
+            dependencies = proposal.get('objective_dependencies', [])
+            if any(states.get(id) != 'accepted' for id in dependencies):
+                if any(states.get(id) in {'rejected', 'outside_trusted_scope', 'obsolete', 'blocked_dependency'} for id in dependencies):
+                    self.store.proposal_state(entry['id'], 'blocked_dependency')
                 continue
             if entry['status'] == 'deferred_instructions':
                 self.store.proposal_state(entry['id'], 'queued')
@@ -230,7 +245,8 @@ class Supervisor:
             if proposal["risk"] != "low" and not self.store.get("approval:" + entry["id"], False):
                 self.store.proposal_state(entry["id"], "awaiting_approval")
                 continue
-            score = proposal["impact"] / proposal["cost"]
+            score = (-proposal.get('objective_order', 0) if objective and objective['state'] != 'completed'
+                     else proposal["impact"] / proposal["cost"])
             candidates.append((score, entry["id"], proposal))
         return max(candidates, default=(None, None, None))[2]
 
@@ -270,18 +286,65 @@ class Supervisor:
                 self.phase("Vérification du projet avant modification")
                 report["before_validation"] = self.verify(worktree)
                 report["before_measurement"] = self.measure(worktree)
+                from .objectives import complete, sync
+                objective = sync(self.store)
+                pursuing = objective is not None and objective['state'] != 'completed'
                 proposal = self.choose()
                 report['proposal_source'] = 'backlog' if proposal else 'discovery'
                 if proposal is None:
-                    self.phase("Recherche ciblée à partir de la mémoire du projet")
                     discovery_started = time.perf_counter()
-                    for item in self.executor.discover(worktree, self.store.history(10), base):
+                    if pursuing:
+                        report['proposal_source'] = 'objective'
+                        pending = [p for p in self.store.proposals()
+                                   if p['payload'].get('objective_fingerprint') == objective['fingerprint']
+                                   and p['status'] in {'awaiting_approval', 'queued'}]
+                        if pending:
+                            raise Blocked('objective_waiting_for_approval_or_scope')
+                        self.phase("Bilan des consignes et prochaines tâches")
+                        if not hasattr(self.executor, 'pursue_objective'):
+                            raise Blocked('objective_transport_unavailable')
+                        criteria, items = self.executor.pursue_objective(worktree, self.store.history(10), base, objective)
+                        from .objectives import validate_assessment
+                        validate_assessment({'criteria': criteria, 'proposals': items}, objective, worktree, self.config)
+                        if git(worktree, 'status', '--porcelain') or git(worktree, 'rev-parse', 'HEAD') != base or tree_hash(worktree, self.config['protected_files']) != protected:
+                            raise Blocked('objective_readonly_check_modified_project')
+                        from .guidance import snapshot
+                        if snapshot(self.store)['fingerprint'] != objective['fingerprint']:
+                            raise Blocked('instructions_changed_before_task')
+                        objective.update(criteria=criteria, state='active', assessed_base=base, reason='')
+                        self.store.set('operator_objective', objective)
+                        if all(c['status'] == 'met' for c in criteria):
+                            self.original_unchanged()
+                            if self.interrupted():
+                                raise Blocked('manual_interrupt')
+                            self.phase("Vérification finale des consignes")
+                            validation = self.verify(worktree)
+                            if git(worktree, 'status', '--porcelain') or tree_hash(worktree, self.config['protected_files']) != protected or git(worktree, 'rev-parse', 'HEAD') != base:
+                                raise Blocked('objective_readonly_check_modified_project')
+                            self.original_unchanged()
+                            complete(self.store, objective, base, validation)
+                            report['objective_validation'] = validation
+                            raise ObjectiveVerified()
+                        if not items:
+                            raise Blocked('objective_needs_evidence_or_scope')
+                    else:
+                        self.phase("Recherche ciblée à partir de la mémoire du projet")
+                        items = self.executor.discover(worktree, self.store.history(10), base)
+                    for index, item in enumerate(items):
+                        if pursuing:
+                            item['objective_dependencies'] = [p['id'] for p in items[:index]]
                         self.store.add(item)
+                    if pursuing:
+                        objective['task_ids'] = list(dict.fromkeys(objective['task_ids'] + [p['id'] for p in items]))
+                        self.store.set('operator_objective', objective)
                     report['discovery_seconds'] = round(time.perf_counter() - discovery_started, 3)
                     proposal = self.choose()
                 if proposal is None:
-                    raise Blocked("no_new_validated_hypothesis")
+                    raise Blocked('objective_needs_evidence_or_scope' if pursuing else "no_new_validated_hypothesis")
                 report["proposal"] = proposal
+                if pursuing:
+                    objective.update(state='active', reason='')
+                    self.store.set('operator_objective', objective)
                 self.store.proposal_state(proposal["id"], "running", attempt=True)
                 self.store.cycle(id, report)
                 self.phase("Codex travaille : " + proposal["problem"])
@@ -307,6 +370,9 @@ class Supervisor:
                     if improvement < self.config["min_improvement_percent"]:
                         raise Blocked("insufficient_measured_improvement")
                 self.original_unchanged()
+                from .guidance import matches, snapshot
+                if not matches(proposal, snapshot(self.store)):
+                    raise Blocked('instructions_changed_before_task')
                 if self.interrupted():
                     raise Blocked("manual_interrupt")
                 # Independent contract/scope checked again after executing all candidate code.
@@ -333,10 +399,20 @@ class Supervisor:
                 self.store.proposal_state(proposal["id"], "accepted")
                 self.store.set("no_progress", 0)
                 self.store.set("blocked_windows", 0)
+            except ObjectiveVerified:
+                report.update(status='objective_verified', reason='operator_criteria_verified')
+                self.store.set('no_progress', 0)
             except (Blocked, RuntimeError, OSError) as error:
                 report.update(status="rejected", reason=str(error))
                 if proposal:
                     self.store.proposal_state(proposal["id"], "rejected")
+                from .objectives import current
+                objective = current(self.store)
+                if objective and objective['state'] != 'completed':
+                    objective.update(state='blocked', reason=str(error))
+                    self.store.set('operator_objective', objective)
+                if str(error) in {'objective_waiting_for_approval_or_scope', 'objective_needs_evidence_or_scope', 'objective_transport_unavailable'}:
+                    self.store.set('control', {'mode': 'stopped', 'reason': str(error)})
                 if self.config.get("auto_promote_source") and str(error) in {
                     "source_changed_before_promotion", "source_changed_during_promotion",
                     "promotion_rollback_conflict", "incomplete_promotion_requires_recovery",
@@ -396,6 +472,6 @@ class Supervisor:
                       all(f in self.config['allowed_files'] for f in p['payload']['files']) and
                       (p['payload']['risk'] == 'low' or self.store.get('approval:' + p['id'], False))
                       for p in self.store.proposals())
-        if backlog or result['status'] == 'accepted_in_snapshot':
+        if backlog or result['status'] in {'accepted_in_snapshot', 'objective_verified'}:
             return max(1, min(interval, self.config.get('active_interval_seconds', interval)))
         return interval

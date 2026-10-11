@@ -30,6 +30,8 @@ def status(runtime):
                       ralph_instructions=store.get('ralph_instructions', ''),
                       instructions_fingerprint=snapshot(store)['fingerprint'],
                       cycles=store.history(12), proposals=store.proposals())
+        from supervisor.objectives import current
+        result['objective'] = current(store)
         # Raw evidence and worktree paths are unnecessary for the overview.
         for cycle in result['cycles']:
             cycle.pop('worktree', None)
@@ -38,7 +40,9 @@ def status(runtime):
                                      ('id', 'problem', 'strategy', 'files', 'success_metric')
                                      if k in cycle['proposal']}
         for entry in result['proposals']:
-            entry['payload'] = {k: entry['payload'][k] for k in ('id', 'problem', 'impact', 'cost', 'files', 'risk')}
+            entry['payload'] = {k: entry['payload'][k] for k in
+                                ('id', 'problem', 'impact', 'cost', 'files', 'risk', 'objective_fingerprint', 'objective_order')
+                                if k in entry['payload']}
         return result
     finally:
         store.close()
