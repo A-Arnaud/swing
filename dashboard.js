@@ -24,14 +24,15 @@ if(localStorage.getItem('swing-screen') === 'workspace') showWorkspace();
 function selectView(view) {
   currentView = view;
   document.querySelectorAll('[data-view]').forEach(button => {const active=button.dataset.view===view; button.classList.toggle('active',active); if(button.role==='tab'){button.setAttribute('aria-selected',String(active));button.tabIndex=active?0:-1;}});
-  ['activity','changes','history'].forEach(name => $('view-'+name).classList.toggle('hidden',name!==view));
+  ['activity','changes','files','history'].forEach(name => $('view-'+name).classList.toggle('hidden',name!==view));
   if(view === 'changes') loadChanges();
+  if(view === 'files') loadRepository();
 }
 document.querySelectorAll('[data-view]').forEach(button => button.addEventListener('click',() => selectView(button.dataset.view)));
 document.querySelector('.panel-tabs').addEventListener('keydown',event => {
   if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key)) return;
-  event.preventDefault(); const views=['activity','changes','history'];let index=views.indexOf(currentView);
-  index=event.key==='Home'?0:event.key==='End'?2:(index+(event.key==='ArrowRight'?1:2))%3;
+  event.preventDefault(); const views=['activity','changes','files','history'];let index=views.indexOf(currentView);
+  index=event.key==='Home'?0:event.key==='End'?3:(index+(event.key==='ArrowRight'?1:3))%4;
   selectView(views[index]);$('tab-'+views[index]).focus();
 });
 $('toggle-stats').addEventListener('click',() => {
@@ -283,6 +284,7 @@ applyProjectTheme();
 
 async function openConnectedProject(id){
   activeProject=id;localStorage.setItem('swing-project',id);projectVersion++;
+  repoDirectory='';repoFile='';repoBranch='';repoGeneration++;repoSignature='';$('repo-entries').replaceChildren();$('repo-content').replaceChildren();
   state=null;instructionDirty=false;firstLoad=true;lastPhase='';lastCalls=null;lastCycle='';historySignature='';lastDiff='';
   $('terminal-log').replaceChildren();$('events').replaceChildren();$('code-diff').replaceChildren();
   $('instructions').value='';$('instruction-dirty').textContent='';$('phase').textContent='Lecture du projet…';$('stop').disabled=true;
@@ -350,3 +352,81 @@ $('github-connect').addEventListener('click',async()=>{
 $('github-search').addEventListener('input',renderGitHubRepositories);
 $('github-more').addEventListener('click',()=>loadGitHubRepositories());
 setInterval(()=>{if($('github-dialog').open && !document.hidden)refreshGitHubAccount();},3000);
+
+
+let repoDirectory='', repoFile='', repoBranch='', repoGeneration=0, repoLoading=false, repoSignature='';
+const relativeDate=new Intl.RelativeTimeFormat('fr',{numeric:'auto'});
+function repoTime(timestamp){
+  if(!timestamp)return '—';
+  const seconds=Math.round((timestamp-Date.now()/1000));
+  const unit=Math.abs(seconds)<60?'second':Math.abs(seconds)<3600?'minute':Math.abs(seconds)<86400?'hour':'day';
+  return relativeDate.format(Math.round(seconds/({second:1,minute:60,hour:3600,day:86400}[unit])),unit);
+}
+function repositoryPath(directory='',file=''){
+  repoDirectory=directory;repoFile=file;repoGeneration++;repoSignature='';loadRepository();
+}
+function renderReadme(content){
+  const fragment=document.createDocumentFragment();let code=null;
+  function inline(parent,text){
+    let end=0;
+    for(const match of text.matchAll(/\*\*([^*\n]+)\*\*|`([^`\n]+)`/g)){
+      parent.append(document.createTextNode(text.slice(end,match.index)));
+      parent.append(element(match[1]?'strong':'code','',match[1]||match[2]));end=match.index+match[0].length;
+    }
+    parent.append(document.createTextNode(text.slice(end)));return parent;
+  }
+  for(const line of content.split('\n')){
+    if(line.startsWith('```')){if(code)code=null;else{code=element('pre','readme-code','');fragment.append(code);}continue;}
+    if(code){code.textContent+=line+'\n';continue;}
+    const heading=line.match(/^(#{1,6})\s+(.+)/);
+    if(heading)fragment.append(inline(element('h'+heading[1].length),heading[2]));
+    else if(line.trim())fragment.append(inline(element('p',/^\s*[-*]\s/.test(line)?'readme-item':''),line));
+  }
+  return fragment;
+}
+async function loadRepository(){
+  if(repoLoading)return;
+  repoLoading=true;const version=projectVersion,generation=repoGeneration;
+  try{
+    const query=new URLSearchParams({directory:repoDirectory,file:repoFile,branch:repoBranch});
+    const data=await api('/api/repository?'+query);
+    if(version!==projectVersion||generation!==repoGeneration)return;
+    $('repo-feedback').textContent=data.truncated?'Affichage limité à 1 000 entrées.':'';
+    const signature=JSON.stringify([data.branch,data.branches,data.local,data.entries,data.file,data.readme,repoDirectory]);
+    if(signature===repoSignature){document.querySelectorAll('.repo-age').forEach(node=>node.textContent=repoTime(Number(node.dataset.timestamp)));return;}
+    repoSignature=signature;
+    $('repo-mode').textContent=data.local?'Dossier local · en direct':'Lecture seule';
+    const branches=data.branches.includes(data.branch)?data.branches:[data.branch,...data.branches];
+    $('repo-branch').replaceChildren(...branches.map(name=>{const option=element('option','',name);option.value=name;return option;}));
+    $('repo-branch').value=data.selected_branch||data.branch;
+    const breadcrumb=$('repo-breadcrumb');breadcrumb.replaceChildren();
+    const root=element('button','',state?.project?.name||'Projet');root.addEventListener('click',()=>repositoryPath());breadcrumb.append(root);
+    let path='';for(const part of repoDirectory.split('/').filter(Boolean)){
+      path+=(path?'/':'')+part;const target=path;breadcrumb.append(element('span','','/'));
+      const button=element('button','',part);button.addEventListener('click',()=>repositoryPath(target));breadcrumb.append(button);
+    }
+    if(repoFile)breadcrumb.append(element('span','','/ '+repoFile.split('/').pop()));
+    const entries=$('repo-entries');entries.replaceChildren();
+    if(repoDirectory){const up=element('button','repo-row repo-up','↑ ..');up.addEventListener('click',()=>repositoryPath(repoDirectory.split('/').slice(0,-1).join('/')));entries.append(up);}
+    for(const item of data.entries){
+      const row=element('button','repo-row'+(item.path===repoFile?' selected':''));row.title=item.path;
+      const name=element('span','repo-name');name.append(element('span','repo-icon',item.kind==='folder'?'▰':'▤'),element('span','',item.name));
+      const age=element('time','repo-age',repoTime(item.time));age.dataset.timestamp=item.time||'';
+      if(item.time){age.dateTime=new Date(item.time*1000).toISOString();age.title=new Date(item.time*1000).toLocaleString('fr-FR');}
+      row.append(name,element('span','repo-message'+(item.modified?' modified':''),item.message||'—'),age);
+      row.addEventListener('click',()=>item.kind==='folder'?repositoryPath(item.path):repositoryPath(repoDirectory,item.path));entries.append(row);
+    }
+    if(!data.entries.length)entries.append(element('p','empty-state','Aucun fichier à afficher.'));
+    const preview=data.file||data.readme;$('repo-preview').classList.toggle('hidden',!preview);
+    $('repo-preview-title').textContent=preview?.path||'';$('repo-content').replaceChildren();
+    if(preview){
+      if(preview.unavailable)$('repo-content').append(element('p','empty-state',preview.unavailable));
+      else if(!data.file||/\.(md|rst)$/i.test(preview.path)){const readme=element('div','repo-readme');readme.append(renderReadme(preview.content));$('repo-content').append(readme);}
+      else{const code=element('pre','repo-code');code.append(element('code','',preview.content));$('repo-content').append(code);}
+    }
+  }catch(error){if(version===projectVersion&&generation===repoGeneration){$('repo-feedback').textContent='Fichiers indisponibles. Réessayez.';repoSignature='';}}
+  finally{repoLoading=false;if(version!==projectVersion||generation!==repoGeneration){if(currentView==='files')loadRepository();}}
+}
+$('repo-branch').addEventListener('change',()=>{repoBranch=$('repo-branch').value;repositoryPath();});
+$('repo-refresh').addEventListener('click',()=>{repoSignature='';loadRepository();});
+setInterval(()=>{if(!document.hidden&&currentView==='files'&&!$('workspace').classList.contains('hidden'))loadRepository();},4000);

@@ -14,6 +14,7 @@ from supervisor.store import Store
 from dashboard_data import status, changes, projects, save_project
 from github_projects import import_project, resolve_runtime
 from github_account import GitHubAccount, repositories
+from repository_browser import browse
 
 
 def serve(runtime):
@@ -98,6 +99,13 @@ def serve(runtime):
                 summary['start_error'] = None
                 payload = json.dumps(summary, ensure_ascii=False).encode('utf-8')
                 self.send_bytes(payload, 'application/json; charset=utf-8')
+            elif route == '/api/repository':
+                try:
+                    query = parse_qs(urlsplit(self.path).query)
+                    payload = browse(selected, **{key: query.get(key, [''])[0] for key in ('directory', 'file', 'branch')})
+                    self.send_bytes(json.dumps(payload, ensure_ascii=False).encode('utf-8'), 'application/json; charset=utf-8')
+                except (OSError, ValueError, RuntimeError, UnicodeError):
+                    self.send_bytes(b'{"error":"repository_unavailable"}', 'application/json', 400)
             elif route in {'/api/changes', '/api/projects'}:
                 try:
                     payload = changes(selected) if route == '/api/changes' else {'projects': projects(runtime)}
