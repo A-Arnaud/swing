@@ -16,6 +16,7 @@ from github_projects import import_project, resolve_runtime
 from github_account import GitHubAccount, repositories
 from repository_browser import browse
 from project_export import archive
+from project_management import delete_project, preview, main_visible
 
 
 def serve(runtime):
@@ -62,6 +63,16 @@ def serve(runtime):
                 self.send_error(403)
                 return
             route = urlsplit(self.path).path
+            if route == '/api/projects/delete-preview':
+                try:
+                    identifier = parse_qs(urlsplit(self.path).query).get('id', [''])[0]
+                    payload = preview(runtime, identifier)
+                    worker = self.server.workers.get(str(runtime if not identifier else runtime.parent / 'swing-projects' / identifier / 'runtime'))
+                    payload['busy'] = payload['busy'] or bool(worker and worker.poll() is None)
+                    self.send_bytes(json.dumps(payload, ensure_ascii=False).encode('utf-8'), 'application/json; charset=utf-8')
+                except (OSError, ValueError, RuntimeError):
+                    self.send_bytes(b'{"error":"project_unavailable"}', 'application/json', 400)
+                return
             if route in {'/api/github/account', '/api/github/repositories'}:
                 try:
                     page = int(parse_qs(urlsplit(self.path).query).get('page', ['1'])[0])
@@ -118,7 +129,7 @@ def serve(runtime):
                     self.send_bytes(b'{"error":"repository_unavailable"}', 'application/json', 400)
             elif route in {'/api/changes', '/api/projects'}:
                 try:
-                    payload = changes(selected) if route == '/api/changes' else {'projects': projects(runtime)}
+                    payload = changes(selected) if route == '/api/changes' else {'projects': projects(runtime), 'main_visible': main_visible(runtime)}
                     self.send_bytes(json.dumps(payload, ensure_ascii=False).encode('utf-8'), 'application/json; charset=utf-8')
                 except (OSError, ValueError, RuntimeError):
                     self.send_bytes(b'{"error":"data_unavailable"}', 'application/json; charset=utf-8', 503)
@@ -128,10 +139,22 @@ def serve(runtime):
         def do_POST(self):
             origin = f'http://127.0.0.1:{self.server.server_port}'
             route = urlsplit(self.path).path
-            if not self.local_request() or self.headers.get('Origin') != origin or route not in {'/api/stop','/api/start','/api/instructions','/api/projects','/api/github/import','/api/github/connect'}:
+            if not self.local_request() or self.headers.get('Origin') != origin or route not in {'/api/stop','/api/start','/api/instructions','/api/projects','/api/projects/delete','/api/github/import','/api/github/connect'}:
                 self.send_error(403)
                 return
             try:
+                if route == '/api/projects/delete':
+                    length = int(self.headers.get('Content-Length', '0'))
+                    if not 0 < length <= 4096:
+                        raise ValueError('invalid_length')
+                    body = json.loads(self.rfile.read(length))
+                    with self.server.start_lock:
+                        def active(root):
+                            worker = self.server.workers.get(str(root))
+                            return bool(worker and worker.poll() is None)
+                        result = delete_project(runtime, body, active)
+                    self.send_bytes(json.dumps(result).encode(), 'application/json; charset=utf-8')
+                    return
                 if route == '/api/github/connect':
                     result = self.server.github.connect()
                     self.send_bytes(json.dumps(result).encode(), 'application/json; charset=utf-8', 202)
@@ -154,7 +177,8 @@ def serve(runtime):
                     body = json.loads(self.rfile.read(length))
                     if not isinstance(body, dict):
                         raise ValueError('invalid_project')
-                    result = save_project(runtime, body)
+                    with self.server.start_lock:
+                        result = save_project(runtime, body)
                     self.send_bytes(json.dumps(result).encode(), 'application/json; charset=utf-8', 201)
                     return
                 if route == '/api/instructions':
@@ -214,8 +238,8 @@ def serve(runtime):
                 store.set('phase', 'Arrêt demandé depuis le tableau de bord')
                 store.close()
                 self.send_bytes(b'{"status":"stopped"}', 'application/json; charset=utf-8')
-            except (ValueError, TypeError) as error:
-                reason = str(error) if isinstance(error, ValueError) else 'invalid_request'
+            except (ValueError, TypeError, RuntimeError) as error:
+                reason = str(error) if isinstance(error, ValueError) else 'unsafe_project_path' if isinstance(error, RuntimeError) else 'invalid_request'
                 self.send_bytes(json.dumps({'status': reason}).encode(), 'application/json; charset=utf-8', 400)
             except (OSError, sqlite3.Error):
                 self.send_bytes(b'{"status":"error"}', 'application/json; charset=utf-8', 503)

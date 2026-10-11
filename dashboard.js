@@ -84,6 +84,7 @@ function duration(cycle) {
 }
 function render(s) {
   state=s;syncProjectTheme(s.project);
+  if(s.project_removed && !activeProject){if(!$('workspace').classList.contains('hidden'))showPicker();return;}
   $('open-app').classList.toggle('hidden',!!activeProject);
   $('open-report').href='/report'+(activeProject?'?project='+encodeURIComponent(activeProject):'');const control=s.control||{}, cycle=s.cycles?.[0], starting=!!s.start_pending && control.mode==='stopped';
   const running=control.mode==='running';const stopped=control.mode==='stopped';
@@ -190,7 +191,7 @@ function openProjectDialog(project={}) {
 $('new-project-card').addEventListener('click',()=>openProjectDialog());
 
 document.querySelectorAll('[data-close]').forEach(button=>button.addEventListener('click',()=>$(button.dataset.close).close()));
-document.querySelectorAll('dialog').forEach(dialog=>dialog.addEventListener('click',event=>{if(event.target===dialog){const r=dialog.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)dialog.close();}}));
+document.querySelectorAll('dialog').forEach(dialog=>dialog.addEventListener('click',event=>{if(dialog.id==='delete-project-dialog' && deletingProject)return;if(event.target===dialog){const r=dialog.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)dialog.close();}}));
 $('project-form').addEventListener('submit',async event=>{
   event.preventDefault();$('save-project').disabled=true;
   try{await api('/api/projects',{id:$('draft-id').value||undefined,name:$('draft-name').value,idea:$('draft-idea').value,instructions:$('draft-instructions').value});
@@ -198,16 +199,58 @@ $('project-form').addEventListener('submit',async event=>{
   }catch{$('draft-feedback').textContent='Enregistrement impossible. Votre texte est conservé ici.';}
   finally{$('save-project').disabled=false;}
 });
+function projectDeleteButton(id,name){
+  const button=element('button','project-delete-button');button.innerHTML='<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7M14 10v7"/></svg>';button.type='button';button.title='Supprimer '+name;button.setAttribute('aria-label','Supprimer '+name);
+  button.addEventListener('click',()=>openDeleteProject(id));return button;
+}
+const mainProjectShell=element('div','project-card-shell');mainProjectShell.id='main-project-shell';
+$('open-project').before(mainProjectShell);mainProjectShell.append($('open-project'),projectDeleteButton('','Token Radar'));
+let deleteProjectPreview=null, deletingProject=false, projectsRequest=0;
+async function openDeleteProject(id){
+  deleteProjectPreview=null;$('delete-project-feedback').textContent='';$('delete-project-name').value='';$('delete-project-submit').disabled=true;
+  try{
+    const info=await api('/api/projects/delete-preview?id='+encodeURIComponent(id));deleteProjectPreview=info;
+    const detach=info.kind==='detach';$('delete-project-title').textContent=detach?'Retirer le projet':'Supprimer le projet';
+    $('delete-project-description').textContent=detach?'Ce projet sera retiré de SWING. Son dossier original, qui contient SWING, et le dépôt GitHub seront conservés.':'La copie locale, les modifications, l’historique et les logs seront effacés définitivement. Le dépôt GitHub sera conservé. Vous pouvez télécharger un ZIP avant de continuer.';
+    $('delete-project-path').textContent=info.path;$('delete-project-expected').textContent=info.name;
+    $('delete-project-submit').textContent=detach?'Retirer de SWING':'Supprimer définitivement';
+    $('delete-project-feedback').textContent=info.busy?'Arrêtez Ralph et attendez la fin de son travail avant de supprimer ce projet.':'';
+    $('delete-project-dialog').showModal();$('delete-project-name').focus();
+  }catch{toast('Impossible de préparer la suppression. Réessayez.');}
+}
+$('delete-active-project').addEventListener('click',()=>openDeleteProject(activeProject));
+$('delete-project-name').addEventListener('input',()=>{$('delete-project-submit').disabled=deletingProject||!deleteProjectPreview||deleteProjectPreview.busy||$('delete-project-name').value!==deleteProjectPreview.name;});
+$('delete-project-cancel').addEventListener('click',()=>{if(!deletingProject)$('delete-project-dialog').close();});
+$('delete-project-dialog').addEventListener('cancel',event=>{if(deletingProject)event.preventDefault();});
+$('delete-project-form').addEventListener('submit',async event=>{
+  event.preventDefault();const info=deleteProjectPreview;
+  if(deletingProject||!info||info.busy||$('delete-project-name').value!==info.name)return;
+  deletingProject=true;$('delete-project-submit').disabled=true;$('delete-project-cancel').disabled=true;
+  $('delete-project-dialog').querySelector('.close-dialog').disabled=true;
+  try{
+    await api('/api/projects/delete',{id:info.id,confirmation:$('delete-project-name').value,fingerprint:info.fingerprint});
+    if(activeProject===info.id){activeProject='';localStorage.setItem('swing-project','');projectVersion++;state=null;}
+    $('delete-project-dialog').close();showPicker();await loadProjects();toast(info.kind==='detach'?'Projet retiré. Dossier original conservé.':'Projet local supprimé.');
+  }catch(error){
+    const reasons={project_name_mismatch:'Le nom ne correspond pas exactement.',project_changed_retry:'Le projet a changé. Fermez cette fenêtre et recommencez.',project_busy:'Ralph travaille encore. Arrêtez-le puis recommencez.',unsafe_project_path:'Suppression bloquée : le dossier contient un lien ou un chemin externe.',external_project_source:'Ce projet pointe vers un dossier externe. Suppression bloquée.',project_delete_failed:'Suppression incomplète. Vérifiez le dossier avant de réessayer.'};
+    $('delete-project-feedback').textContent=reasons[error.message]||'Suppression impossible. Vérifiez le dossier avant de réessayer.';
+  }finally{
+    deletingProject=false;$('delete-project-cancel').disabled=false;$('delete-project-dialog').querySelector('.close-dialog').disabled=false;
+    $('delete-project-submit').disabled=!deleteProjectPreview||deleteProjectPreview.busy||$('delete-project-name').value!==deleteProjectPreview.name;
+  }
+});
 async function loadProjects(){
-  try{const data=await api('/api/projects');document.querySelectorAll('.draft-card').forEach(x=>x.remove());
+  const version=++projectsRequest;
+  try{const data=await api('/api/projects');if(version!==projectsRequest)return;document.querySelectorAll('.draft-card').forEach(x=>x.remove());
     for(const project of data.projects||[]){
-      const card=element('button','project-card draft-card');const top=element('div','project-card-top');
+      const shell=element('div','project-card-shell draft-card');const card=element('button','project-card');const top=element('div','project-card-top');
       top.append(element('span','project-monogram',project.name.slice(0,2).toUpperCase()),element('span','card-tag',project.state==='connected'?'GitHub':'Brief'));
       card.append(top,element('strong','',project.name),element('p','',project.idea.slice(0,100)+(project.idea.length>100?'…':'')),element('span','card-link',project.state==='connected'?'Ouvrir ↗':'Modifier ↗'));
-      card.addEventListener('click',()=>project.state==='connected'?openConnectedProject(project.id):openProjectDialog(project));$('project-grid').insertBefore(card,$('new-project-card'));
+      card.addEventListener('click',()=>project.state==='connected'?openConnectedProject(project.id):openProjectDialog(project));shell.append(card,projectDeleteButton(project.id,project.name));$('project-grid').insertBefore(shell,$('new-project-card'));
     }
     const connected=(data.projects||[]).filter(p=>p.state==='connected').length, briefs=(data.projects||[]).length-connected;
-    $('project-count').textContent=(1+connected)+' projets'+(briefs?' · '+briefs+' briefs':'');
+    $('main-project-shell').classList.toggle('hidden',data.main_visible===false);
+    $('project-count').textContent=((data.main_visible===false?0:1)+connected)+' projets'+(briefs?' · '+briefs+' briefs':'');
   }catch{/* The connected project remains available if draft storage is unavailable. */}
 }
 const letters={

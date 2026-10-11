@@ -128,3 +128,18 @@ Le contexte d'implémentation omet l'inventaire général des dossiers et recett
 il garde les fichiers ciblés, la compréhension persistante et les consignes.
 Les profils, tests et sorties réelles priment sur les déclarations du modèle.
 Un passage des tests établit le contrat testé, pas la perfection du produit.
+
+
+## Supprimer un projet
+
+La corbeille sur une carte ou dans le projet ouvre une confirmation qui affiche
+le chemin concerné. Le nom exact doit être retapé ; le serveur vérifie le nom et
+la version du projet, pas seulement l'état du bouton. Arrêter Ralph et attendre
+sa sortie avant de confirmer. Les copies importées, leurs modifications locales,
+historiques et logs sont effacés ; GitHub reste intact. Télécharger un ZIP permet
+de conserver le code avant la suppression.
+
+Le projet local initial contient SWING lui-même : le retirer masque sa carte sans
+effacer le dossier original. Les chemins externes et liens de fichiers sont
+refusés. Le lancement et la suppression partagent un verrou pendant toute la
+session Ralph pour empêcher un démarrage pendant la suppression.

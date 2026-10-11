@@ -25,6 +25,7 @@ def status(runtime):
                       reasoning_effort=config.get('reasoning_effort'), model_calls=calls,
                       token_usage={'measured_total': tokens, 'unknown_calls': incomplete or 0},
                       no_progress_cycles=store.get('no_progress', 0),
+                      project_removed=store.get('project_removed', False),
                       project={'name': config.get('project_name') or project.name.replace('-', ' ').title(),
                                'path': str(project), 'github_url': config.get('github_url')},
                       ralph_instructions=store.get('ralph_instructions', ''),

@@ -21,3 +21,5 @@ swing-projects/
 ralph-comparison-results.json
 ralph-comparison.html
 validation-results.json
+
+.operation-*.lock

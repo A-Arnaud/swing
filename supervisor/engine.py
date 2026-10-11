@@ -138,6 +138,8 @@ class Supervisor:
         render(self)
 
     def ready(self):
+        if self.store.get('project_deleting') or self.store.get('project_removed'):
+            return False
         control = self.store.get("control")
         if control.get("mode") == "auto_paused" and time.time() >= control.get("until", math.inf):
             self.store.set("control", {"mode": "running", "reason": "cooldown_elapsed"})

@@ -35,8 +35,16 @@ def main(runtime=None):
     parser.add_argument('--check', action='store_true', help='Check only; never launches a model turn')
     parser.add_argument('--runtime', type=Path, default=Path(__file__).resolve().parent / 'runtime-chatgpt-plus')
     args = parser.parse_args([] if runtime is not None else None)
-    s = Supervisor(runtime or args.runtime)
+    from project_management import runtime_guard
+    with runtime_guard(runtime or args.runtime):
+        return launch(runtime or args.runtime, args.check)
+
+
+def launch(runtime, check=False):
+    s = Supervisor(runtime)
     try:
+        if s.store.get('project_removed') or s.store.get('project_deleting'):
+            raise Blocked('project_unavailable')
         if restricted_token():
             raise Blocked('restricted_windows_execution_context')
         s.original_unchanged()
@@ -46,7 +54,7 @@ def main(runtime=None):
             raise Blocked('chatgpt_quota_exhausted')
         if not (s.config['isolated_execution_confirmed'] is True or s.config.get('local_execution_authorized', False) is True):
             raise Blocked('external_isolation_not_confirmed')
-        if args.check:
+        if check:
             print(json.dumps({'status': 'ready', 'model': s.config['model'],
                               'reasoning_effort': s.config['reasoning_effort'], 'isolated_execution_confirmed': s.config['isolated_execution_confirmed'], 'local_execution_authorized': s.config.get('local_execution_authorized', False)}))
             return 0
