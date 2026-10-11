@@ -171,6 +171,8 @@ class Supervisor:
         # Do not publish output that might contain secrets or untrusted file content.
         result = {"exit_code": code, "elapsed_ms": round((time.perf_counter() - start) * 1000, 3),
                   "output_sha256": digest(stdout + stderr)}
+        from .feedback import validation_feedback
+        self._last_validation_failure = validation_feedback(stdout, stderr) if code else ''
         if len(self.config['validation_argv']) >= 4 and Path(self.config['validation_argv'][3]).resolve() == Path(__file__).resolve().parents[1] / 'automatic_checks.py' and not code:
             try:
                 result['check_level'] = json.loads(stdout.splitlines()[-1])['level']
@@ -201,6 +203,43 @@ class Supervisor:
                 raise Blocked("invalid_benchmark_result") from None
             samples.append(value)
         return {"metric": metric, "samples": samples, "median": statistics.median(samples)}
+
+    def validate_candidate(self, worktree, proposal, protected, report):
+        """One focused repair on the same candidate; every model call keeps quota controls."""
+        self._last_validation_failure = ''
+        try:
+            return self.verify(worktree)
+        except Blocked as error:
+            if (str(error) != 'independent_validation_failed'
+                    or not self.config.get('repair_validation_failures', self.config['mode'] != 'demo')
+                    or not self._last_validation_failure
+                    or self.interrupted()):
+                raise
+            attempts = next(p['attempts'] for p in self.store.proposals() if p['id'] == proposal['id'])
+            if attempts >= min(2, self.config['max_attempts_per_proposal']):
+                raise
+            from .guidance import matches, snapshot
+            if not matches(proposal, snapshot(self.store)):
+                raise Blocked('instructions_changed_before_task')
+            self.original_unchanged()
+            changed_files(worktree, proposal['files'], self.config['protected_files'])
+            if tree_hash(worktree, self.config['protected_files']) != protected:
+                raise Blocked('validation_contract_modified')
+            if git(worktree, 'rev-parse', 'HEAD') != proposal['base']:
+                raise Blocked('executor_changed_git_history')
+            repair = {**proposal, 'repair_feedback': self._last_validation_failure}
+            self.store.proposal_state(proposal['id'], 'running', attempt=True)
+            report['repair_attempts'] = 1
+            self.store.cycle(report['id'], report)
+            self.phase('Correction ciblée après échec des tests : ' + proposal['problem'])
+            started = time.perf_counter()
+            self.executor.implement(worktree, repair)
+            report['repair_seconds'] = round(time.perf_counter() - started, 3)
+            report['changed_files'] = changed_files(worktree, proposal['files'], self.config['protected_files'])
+            if tree_hash(worktree, self.config['protected_files']) != protected:
+                raise Blocked('validation_contract_modified')
+            self.phase('Nouvelle vérification indépendante de la correction')
+            return self.verify(worktree)
 
     def choose(self):
         from .guidance import matches, snapshot
@@ -343,6 +382,10 @@ class Supervisor:
                         if not items:
                             raise Blocked('objective_needs_evidence_or_scope')
                     else:
+                        from .guidance import matches, snapshot
+                        guidance = snapshot(self.store)
+                        if self.config['mode'] != 'demo' and any(p['status'] == 'awaiting_approval' and matches(p['payload'], guidance) for p in self.store.proposals()):
+                            raise Blocked('work_waiting_for_approval')
                         self.phase("Recherche ciblée à partir de la mémoire du projet")
                         items = self.executor.discover(worktree, self.store.history(10), base)
                     for index, item in enumerate(items):
@@ -373,7 +416,7 @@ class Supervisor:
                 if tree_hash(worktree, self.config["protected_files"]) != protected:
                     raise Blocked("validation_contract_modified")
                 self.phase("Tests indépendants et contrôle des modifications")
-                report["after_validation"] = self.verify(worktree)
+                report["after_validation"] = self.validate_candidate(worktree, proposal, protected, report)
                 report["after_measurement"] = self.measure(worktree)
                 if tree_hash(worktree, self.config["protected_files"]) != protected:
                     raise Blocked("validation_contract_modified")
@@ -448,6 +491,8 @@ class Supervisor:
                     objective.update(state='blocked', reason=str(error))
                     self.store.set('operator_objective', objective)
                 if str(error) in {'objective_waiting_for_approval_or_scope', 'objective_needs_evidence_or_scope', 'objective_transport_unavailable'}:
+                    self.store.set('control', {'mode': 'stopped', 'reason': str(error)})
+                if self.config.get('stop_when_no_actionable_work', self.config['mode'] != 'demo') and str(error) in {'no_new_validated_hypothesis', 'work_waiting_for_approval'}:
                     self.store.set('control', {'mode': 'stopped', 'reason': str(error)})
                 if self.config.get("auto_promote_source") and str(error) in {
                     "source_changed_before_promotion", "source_changed_during_promotion",

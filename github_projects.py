@@ -153,6 +153,7 @@ def import_project(default_runtime, body):
                       protected_files=[f for f in files if f not in editable], validation_argv=validation,
                       benchmark_argv=[], max_disk_mb=1500, interval_seconds=120, active_interval_seconds=5,
                       persistent_backlog=True, project_onboarding=True, allow_new_files=True,
+                      repair_validation_failures=True, stop_when_no_actionable_work=True,
                       allow_repair_baseline=True, validation_level=profile['validation_level'])
         config['project_name'] = repo_name
         config['github_url'] = url.removesuffix('.git')

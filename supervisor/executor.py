@@ -178,7 +178,9 @@ class CodexExecutor:
                 ensure_ascii=False, separators=(',', ':'))
         profile = self.store.get('project_profile')
         if profile:
-            text += '\nPROJECT_SETUP:\n' + json.dumps(profile, ensure_ascii=False, separators=(',', ':'))
+            setup = ({key: profile.get(key) for key in ('languages', 'frameworks', 'validation_level')}
+                     if focus else profile)
+            text += '\nPROJECT_SETUP:\n' + json.dumps(setup, ensure_ascii=False, separators=(',', ':'))
             text += '\nPERSISTENT_PROJECT_UNDERSTANDING:\n' + json.dumps(
                 self.store.get('project_understanding'), ensure_ascii=False, separators=(',', ':'))
             text += '\nBASELINE_CHECKS:\n' + json.dumps(self.store.get('baseline_checks'))
@@ -304,6 +306,7 @@ class CodexExecutor:
         return criteria, proposals
 
     def implement(self, worktree, proposal):
+        from .feedback import repair_context
         prompt = (
             "Implement only the approved proposal below. First verify its evidence against the current "
             "code and relevant callers/tests, particularly changes_since_discovery. If already fixed or "
@@ -316,5 +319,6 @@ class CodexExecutor:
             "limitations: passing tests is not predictive or financial improvement.\n" +
             self.project_context(worktree, proposal["base"], proposal['files'],
                                  proposal.get('instructions_fingerprint')) +
-            "\nPROPOSAL:\n" + json.dumps(proposal, ensure_ascii=False, separators=(',', ':')))
+            "\nPROPOSAL:\n" + json.dumps({k: v for k, v in proposal.items() if k != 'repair_feedback'}, ensure_ascii=False, separators=(',', ':')) +
+            repair_context(proposal))
         return self.call(worktree, prompt)

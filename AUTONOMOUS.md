@@ -41,7 +41,10 @@ de `src/token_radar/research.py` : +30 % simulé en 2 min, +100 % en 10 min ou
 +200 % en 30 min. Ce sont des cibles de recherche, pas une performance validée.
 
 Le périmètre couvre les 44 fichiers existants sous `src/token_radar/`, y compris
-le frontend. Ralph recherche de petites améliorations justifiées, implémente
+le frontend. De nouveaux fichiers source et tests de régression peuvent aussi
+être proposés, avec chaque chemin explicitement approuvé dans la tâche. Les
+tests existants restent protégés ; les nouveaux tests acceptés le deviennent.
+Ralph recherche de petites améliorations justifiées, implémente
 une proposition par session, puis exécute les tests applicatifs indépendants
 et Ruff. Les contrats de tests restent protégés. Les améliorations n'ont plus
 à démontrer un gain de vitesse de 20 % : la configuration active utilise
@@ -98,3 +101,30 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .local\supervisor-protot
 
 Cette note décrit l'état actif et remplace les anciennes notes de préparation
 VM ou d'attente manuelle présentes dans les documents historiques.
+
+
+## Travail utile et consommation
+
+Les consignes actives passent avant toute recherche générale. Leur plan et ses
+critères sont conservés entre les itérations ; une file de tâches n'est pas
+replanifiée tant qu'elle contient du travail exécutable. Après validation des
+critères, seules des améliorations justifiées par des faits sont proposées.
+
+Pour les projets réels, une recherche sans tâche exécutable arrête Ralph dès
+le premier bilan vide. Il ne se relance pas après un délai pour refaire la même
+recherche. Une tâche en attente d'approbation arrête également la recherche.
+Une reprise manuelle permet un nouveau bilan ; modifier les consignes renouvelle
+le plan. Les démonstrations synthétiques conservent leur ancien comportement.
+
+Quand les contrôles indépendants échouent après une modification, une seule
+correction ciblée peut reprendre le candidat existant, avec un diagnostic court
+et filtré. Elle ne recommence ni l'audit ni le développement depuis zéro. Elle
+compte dans le plafond de deux tentatives par tâche et utilise les mêmes contrôles
+de quota, d'arrêt, de périmètre et de consignes que le premier appel. Aucun
+réessai pour une modification protégée, un quota épuisé ou une interruption.
+Si les tests échouent encore, le candidat reste rejeté et n'est pas appliqué.
+
+Le contexte d'implémentation omet l'inventaire général des dossiers et recettes ;
+il garde les fichiers ciblés, la compréhension persistante et les consignes.
+Les profils, tests et sorties réelles priment sur les déclarations du modèle.
+Un passage des tests établit le contrat testé, pas la perfection du produit.

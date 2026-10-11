@@ -98,6 +98,8 @@ function render(s) {
   $('elapsed').textContent=duration(cycle);
   let phase=s.phase||'Prêt à commencer.';
   if(stopped) phase=control.reason==='chatgpt_quota_exhausted'?'Quota atteint · Ralph arrêté':s.start_error?'Démarrage bloqué : '+s.start_error:'Ralph arrêté';
+  if(stopped && control.reason==='no_new_validated_hypothesis')phase='Aucune tâche justifiée · Ralph arrêté';
+  if(stopped && control.reason==='work_waiting_for_approval')phase='Une tâche attend votre validation';
   $('phase').textContent=phase;
   const objective=s.objective, criteria=objective?.criteria||[];
   const pursuing=objective && objective.state!=='completed';

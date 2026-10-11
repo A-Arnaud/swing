@@ -22,6 +22,10 @@ Queued stories survive earlier commits: changes_since_discovery lists files that
 changed since the evidence was collected, including dependencies. Check their
 impact before editing. If the issue is already fixed or unsupported, leave files
 unchanged and explain why. Evidence in a story is a hypothesis, not a test result.
+For functional changes, reproduce the old behavior and check the requested new
+behavior. Use relevant existing tests or approved new regression tests. Avoid
+tests that merely copy the implementation; cover the failing case and a normal
+case. Do not invent product value from a cosmetic edit or a passing test suite.
 Preserve unknown/censored data and point-in-time correctness. Application checks
 do not prove predictive lift; do not tune thresholds/weights/models without mature
 independent outcomes and a trusted evaluator. Never claim a financial improvement

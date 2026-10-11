@@ -49,7 +49,7 @@ class RalphExecutor:
         if branch != 'cycle/' + cycle_id or git(worktree, 'rev-parse', 'HEAD') != proposal['base']:
             raise Blocked('ralph_branch_mismatch')
         directory = self.directory(cycle_id)
-        directory.mkdir(parents=True, exist_ok=False)
+        directory.mkdir(parents=True, exist_ok=bool(proposal.get('repair_feedback')))
         prd = {'project': 'isolated improvement', 'branchName': branch,
                'userStories': [{'id': proposal['id'], 'title': proposal['problem'],
                                 'description': proposal['strategy'], 'priority': 1,
@@ -67,7 +67,9 @@ class RalphExecutor:
                    for r in self.store.history(10) if r['status'] != 'running']
         atomic_json(directory / 'progress.json', history)
         template = (Path(__file__).resolve().parents[1] / 'prompts/ralph-codex.md').read_text(encoding='utf-8')
+        from .feedback import repair_context
         prompt = template + '\nPRD_DATA_BEGIN\n' + json.dumps(prd, ensure_ascii=False, separators=(',', ':')) + '\nPRD_DATA_END\n'
+        prompt += repair_context(proposal)
         if hasattr(self.transport, 'project_context'):
             # Context already contains relevant verified results; do not send them twice.
             prompt += self.transport.project_context(worktree, proposal['base'], proposal['files'],
