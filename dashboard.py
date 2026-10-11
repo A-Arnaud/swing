@@ -1,6 +1,5 @@
 """Loopback-only Ralph dashboard and explicit stop control."""
 import argparse
-import contextlib
 import json
 import sqlite3
 import subprocess
@@ -14,6 +13,7 @@ from urllib.parse import urlsplit, parse_qs
 from supervisor.store import Store
 from dashboard_data import status, changes, projects, save_project
 from github_projects import import_project, resolve_runtime
+from github_account import GitHubAccount, repositories
 
 
 def serve(runtime):
@@ -28,6 +28,7 @@ def serve(runtime):
             self.start_thread = None
             self.start_error = None
             self.workers = {}
+            self.github = GitHubAccount()
 
     class Handler(BaseHTTPRequestHandler):
         def project_runtime(self):
@@ -57,6 +58,15 @@ def serve(runtime):
                 self.send_error(403)
                 return
             route = urlsplit(self.path).path
+            if route in {'/api/github/account', '/api/github/repositories'}:
+                try:
+                    page = int(parse_qs(urlsplit(self.path).query).get('page', ['1'])[0])
+                    data = self.server.github.status() if route.endswith('account') else repositories(page)
+                    self.send_bytes(json.dumps(data).encode(), 'application/json; charset=utf-8')
+                except (OSError, ValueError, subprocess.SubprocessError) as error:
+                    reason = str(error) if isinstance(error, ValueError) else 'github_unavailable'
+                    self.send_bytes(json.dumps({'status': reason}).encode(), 'application/json', 400)
+                return
             try:
                 selected = self.project_runtime()
             except (ValueError, OSError):
@@ -100,10 +110,14 @@ def serve(runtime):
         def do_POST(self):
             origin = f'http://127.0.0.1:{self.server.server_port}'
             route = urlsplit(self.path).path
-            if not self.local_request() or self.headers.get('Origin') != origin or route not in {'/api/stop','/api/start','/api/instructions','/api/projects','/api/github/import'}:
+            if not self.local_request() or self.headers.get('Origin') != origin or route not in {'/api/stop','/api/start','/api/instructions','/api/projects','/api/github/import','/api/github/connect'}:
                 self.send_error(403)
                 return
             try:
+                if route == '/api/github/connect':
+                    result = self.server.github.connect()
+                    self.send_bytes(json.dumps(result).encode(), 'application/json; charset=utf-8', 202)
+                    return
                 selected = self.project_runtime()
                 if route == '/api/github/import':
                     length = int(self.headers.get('Content-Length', '0'))

@@ -34,6 +34,13 @@ def command(value):
         argv[0] = sys.executable
         if len(argv) < 2 or argv[1].startswith('-') and (argv[1] != '-m' or len(argv) < 3):
             raise ValueError('python_validation_requires_module_or_script')
+    elif argv[0] == 'npm':
+        npm = shutil.which('npm')
+        node = shutil.which('node')
+        cli = Path(npm).parent / 'node_modules/npm/bin/npm-cli.js' if npm else None
+        if not node or not cli or not cli.is_file():
+            raise ValueError('npm_runtime_required')
+        argv = [node, str(cli), *argv[1:]]
     else:
         executable = shutil.which(argv[0])
         if not executable or Path(executable).suffix.lower() in {'.bat', '.cmd', '.ps1'}:
@@ -42,13 +49,36 @@ def command(value):
     return argv
 
 
+def detect_validation(source, files):
+    names = set(files)
+    if 'package.json' in names:
+        package = json.loads((source / 'package.json').read_text(encoding='utf-8'))
+        if package.get('scripts', {}).get('test'):
+            return 'npm test'
+    if 'Cargo.toml' in names:
+        return 'cargo test'
+    if 'go.mod' in names:
+        return 'go test ./...'
+    if any(n.endswith(('.csproj', '.sln', '.fsproj')) for n in names):
+        return 'dotnet test'
+    if any(n.startswith('tests/') and n.endswith('.py') for n in names):
+        # Recognize the test framework instead of interpreting a repo-supplied
+        # shell command or inventing a "passed" result without tests.
+        tests = [n for n in names if n.startswith('tests/') and n.endswith('.py')][:12]
+        uses_pytest = any(b'pytest' in (source / n).read_bytes() for n in tests)
+        return 'python -m pytest tests' if uses_pytest else 'python -m unittest discover -s tests'
+    raise ValueError('validation_command_required')
+
+
 def import_project(default_runtime, body):
     url, name = github_url(body.get('url'))
     instructions = body.get('instructions', '')
     if not isinstance(instructions, str) or len(instructions) > 4000:
         raise ValueError('invalid_instructions')
     repo_name = name
-    validation = command(body.get('validation', ''))
+    validation_text = body.get('validation', '')
+    if not isinstance(validation_text, str) or len(validation_text) > 500:
+        raise ValueError('invalid_validation_command')
     base_config = json.loads((default_runtime / 'config.json').read_text(encoding='utf-8'))
     identifier = uuid.uuid4().hex
     folder = default_runtime.parent / 'swing-projects' / identifier
@@ -88,11 +118,18 @@ def import_project(default_runtime, body):
                 raise ValueError('repository_contains_credentials')
             files.append(name)
             parts = Path(name.lower()).parts
-            protected = any(p.startswith(('test', 'spec')) for p in parts) or Path(name).name in {'AGENTS.md', 'SKILL.md'}
-            if not protected and Path(name).suffix.lower() in {'.py', '.js', '.mjs', '.ts', '.tsx', '.jsx', '.css', '.html', '.vue', '.svelte', '.go', '.rs', '.java'}:
+            protected = (any(p.startswith(('test', 'spec')) for p in parts)
+                         or '.test.' in name.lower() or '.spec.' in name.lower()
+                         or name.lower().endswith('_test.go')
+                         or Path(name).name in {'AGENTS.md', 'SKILL.md'})
+            if not protected and Path(name).suffix.lower() in {'.py', '.js', '.mjs', '.cjs', '.ts', '.tsx', '.jsx',
+                    '.css', '.scss', '.html', '.vue', '.svelte', '.go', '.rs', '.java', '.kt', '.cs', '.fs',
+                    '.c', '.h', '.cpp', '.hpp', '.swift', '.rb', '.php', '.dart', '.scala', '.md', '.rst'}:
                 editable.append(name)
         if not editable:
             raise ValueError('no_supported_editable_source')
+        validation_text = validation_text.strip() or detect_validation(source, files)
+        validation = command(validation_text)
         initialize(runtime, source, 'ralph', source_files=files)
         if validation[0] == sys.executable:
             specification = runtime / 'validation-command.json'
@@ -126,7 +163,7 @@ def import_project(default_runtime, body):
             'Only existing allowlisted source files may change.\n\nREADME context:\n' + brief,
             encoding='utf-8')
         result = dict(id=identifier, name=repo_name, idea='Dépôt GitHub', instructions=instructions.strip(),
-                      state='connected', github_url=url.removesuffix('.git'), validation=body['validation'],
+                      state='connected', github_url=url.removesuffix('.git'), validation=validation_text,
                       imported_files=len(files), editable_files=len(editable), excluded_files=excluded,
                       updated_at=time.time())
         (folder / 'project.json').write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding='utf-8')

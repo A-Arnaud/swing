@@ -16,9 +16,16 @@ police ou service externe n'est chargé.
 - Navigation au clavier, disposition mobile, animations respectant reduced-motion.
 
 Un nouveau brief n'est pas un runtime : il n'exécute aucun code ni appel IA.
-Le bouton **Importer GitHub** clone un dépôt public ou privé accessible via Git
-sur le poste. Une URL HTTPS GitHub, une commande de test et les consignes préparent
-un runtime indépendant. Les projets connectés sont ouverts depuis leurs cartes.
+Le bouton **Importer GitHub** propose une connexion dans le navigateur via Git
+Credential Manager, puis liste les dépôts accessibles au compte (propriétaire,
+collaborateur ou organisation), avec pagination et recherche parmi les résultats
+chargés. La saisie directe d'une URL GitHub reste disponible pour les dépôts
+publics. Les identifiants restent dans le gestionnaire du poste ; aucun jeton
+n'est envoyé à l'interface, à Codex ou au runtime. Cette connexion correspond
+à la version Windows locale, pas à une plateforme hébergée avec des comptes web.
+Le dépôt et les consignes préparent un runtime indépendant. Une commande de test
+peut être détectée pour Python, npm, Go, Rust ou .NET, ou saisie explicitement.
+Les projets connectés sont ouverts depuis leurs cartes.
 Le choix de projet est conservé dans le navigateur et chaque API vise son runtime.
 Le code reste dans `swing-projects/<id>/source`, les preuves et sauvegardes dans
 `swing-projects/<id>/runtime`. Aucun push, installation de dépendances ou lancement
@@ -27,9 +34,13 @@ Les tests de référence doivent réussir avant une recherche IA. Les commandes
 Python chargent le code de la copie candidate avant un éventuel paquet installé.
 Les tests, configurations et secrets restent protégés ; seules les sources
 existantes reconnues sont modifiables. Les changements validés sont appliqués
-à la copie locale. Pour l'instant, seuls des exécutables disponibles directement
-(comme Python ou Node) sont acceptés ; les scripts shell et lanceurs npm.cmd ne
-sont pas exécutés par l'importeur. Les briefs restent enregistrés séparément.
+à la copie locale. Les outils et dépendances du projet doivent être disponibles :
+ils ne sont pas installés automatiquement. npm est résolu vers son CLI Node sans
+shell ; les autres commandes utilisent un exécutable disponible directement.
+Les sources de plusieurs langages et la documentation sont reconnues ; un dépôt
+sans sources textuelles prises en charge ou sans validation exploitable nécessite
+une configuration adaptée. Importer un dépôt ne garantit pas qu'il peut déjà
+être compilé, testé ou amélioré sur ce poste. Les briefs restent séparés.
 
 ## Consignes : des effets vérifiables
 

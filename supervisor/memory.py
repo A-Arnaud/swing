@@ -51,7 +51,7 @@ def refresh(worktree, config, store, base):
         if forbidden(name):
             continue
         relative = safe_relative(name)
-        if not (name.startswith(('src/', 'tests/', 'docs/', 'specifications/'))
+        if not config.get('source_files') and not (name.startswith(('src/', 'tests/', 'docs/', 'specifications/'))
                 or name in {'README.md', 'STATUS.md', 'calc.py', 'contract.py'}):
             continue
         path = Path(worktree) / relative

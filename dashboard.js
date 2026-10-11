@@ -10,7 +10,7 @@ function element(tag, className, text) {const el = document.createElement(tag); 
 function toast(message) {$('toast').textContent = message; $('toast').classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => $('toast').classList.remove('show'), 3600);}
 async function api(route, body) {
   const options = body === undefined ? {cache:'no-store'} : {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)};
-  if(activeProject && !['/api/projects','/api/github/import'].includes(route))route+=(route.includes('?')?'&':'?')+'project='+encodeURIComponent(activeProject);
+  if(activeProject && route!=='/api/projects' && !route.startsWith('/api/github/'))route+=(route.includes('?')?'&':'?')+'project='+encodeURIComponent(activeProject);
   const response = await fetch(route, options); const result = await response.json();
   if(!response.ok) throw new Error(result.status || result.error || 'request_failed');
   return result;
@@ -277,14 +277,57 @@ async function openConnectedProject(id){
   while(fetching)await new Promise(resolve=>setTimeout(resolve,50));
   await refresh();
 }
-$('import-github').addEventListener('click',()=>{$('github-feedback').textContent='';$('github-dialog').showModal();});
+$('import-github').addEventListener('click',()=>{$('github-feedback').textContent='';$('github-dialog').showModal();refreshGitHubAccount();});
 $('github-form').addEventListener('submit',async event=>{
   event.preventDefault();$('github-submit').disabled=true;$('github-feedback').textContent='Clonage et préparation…';
   try{
     const project=await api('/api/github/import',{url:$('github-url').value,validation:$('github-validation').value,instructions:$('github-instructions').value});
     $('github-dialog').close();toast('Dépôt importé. Prêt pour les consignes et les tests.');await loadProjects();await openConnectedProject(project.id);
   }catch(error){
-    const reasons={github_https_url_required:'Utilisez une URL https://github.com/compte/projet.',github_clone_failed_check_access:'Clonage impossible. Vérifiez le dépôt et votre accès GitHub.',validation_executable_required:'Indiquez un exécutable disponible (python, node…).',no_supported_editable_source:'Aucun fichier source modifiable reconnu.',repository_contains_credentials:'Des identifiants sont présents dans le dépôt. Retirez-les avant l’import.'};
+    const reasons={github_https_url_required:'Utilisez une URL https://github.com/compte/projet.',github_clone_failed_check_access:'Clonage impossible. Vérifiez le dépôt et votre accès GitHub.',validation_executable_required:'Outil de test absent du poste. Installez-le ou indiquez un autre exécutable.',npm_runtime_required:'Node et npm doivent être installés.',validation_command_required:'Commande non détectée. Indiquez la commande de test de ce projet.',no_supported_editable_source:'Aucun fichier source modifiable reconnu.',repository_contains_credentials:'Des identifiants sont présents dans le dépôt. Retirez-les avant l’import.'};
     $('github-feedback').textContent=reasons[error.message]||'Import impossible : '+error.message;
   }finally{$('github-submit').disabled=false;}
 });
+
+let githubRepos=[],githubNext=1,githubLoading=false,githubAccountPending=false;
+function renderGitHubRepositories(){
+  const query=$('github-search').value.toLowerCase().trim();
+  const rows=githubRepos.filter(repo=>repo.name.toLowerCase().includes(query)).map(repo=>{
+    const button=element('button','github-repository');button.type='button';
+    button.append(element('strong','',repo.name),element('small','',(repo.private?'Privé':'Public')+(repo.language?' · '+repo.language:'')));
+    button.addEventListener('click',()=>{$('github-url').value=repo.url;$('github-validation').value='';$('github-feedback').textContent=repo.name+' sélectionné';});
+    return button;
+  });
+  $('github-repositories').replaceChildren(...(rows.length?rows:[element('p','empty-state',query?'Aucun dépôt chargé ne correspond.':'Aucun dépôt chargé.')]));
+  $('github-more').classList.toggle('hidden',!githubNext);
+}
+async function loadGitHubRepositories(reset=false){
+  if(githubLoading)return;githubLoading=true;
+  if(reset){githubRepos=[];githubNext=1;}
+  try{
+    const data=await api('/api/github/repositories?page='+(githubNext||1));
+    const known=new Set(githubRepos.map(r=>r.url));githubRepos.push(...data.repositories.filter(r=>!known.has(r.url)));githubNext=data.next_page;
+    renderGitHubRepositories();
+  }catch{$('github-feedback').textContent='Impossible de lire les dépôts. Vérifiez la connexion GitHub.';}
+  finally{githubLoading=false;}
+}
+async function refreshGitHubAccount(){
+  if(githubAccountPending)return;githubAccountPending=true;
+  try{
+    const account=await api('/api/github/account');
+    $('github-account-state').textContent=account.connecting?'Terminez la connexion dans le navigateur.':account.connected?'Connecté : '+account.login:'Compte non connecté';
+    $('github-connect').textContent=account.connected?'Reconnecter':'Connecter GitHub';$('github-connect').disabled=account.connecting;
+    $('github-browser').classList.toggle('hidden',!account.connected);
+    if(account.connected && !githubRepos.length)await loadGitHubRepositories(true);
+    if(account.error)$('github-feedback').textContent='Connexion interrompue. Vous pouvez réessayer.';
+  }catch{$('github-account-state').textContent='Connexion GitHub indisponible';}
+  finally{githubAccountPending=false;}
+}
+$('github-connect').addEventListener('click',async()=>{
+  $('github-connect').disabled=true;
+  try{await api('/api/github/connect',{});githubRepos=[];$('github-account-state').textContent='Terminez la connexion dans le navigateur.';}
+  catch{$('github-feedback').textContent='Connexion impossible. Git Credential Manager doit être installé sur le poste.';$('github-connect').disabled=false;}
+});
+$('github-search').addEventListener('input',renderGitHubRepositories);
+$('github-more').addEventListener('click',()=>loadGitHubRepositories());
+setInterval(()=>{if($('github-dialog').open && !document.hidden)refreshGitHubAccount();},3000);

@@ -7,7 +7,7 @@ import unittest
 from unittest.mock import patch
 
 from dashboard_data import save_project, status
-from github_projects import github_url, import_project, resolve_runtime
+from github_projects import github_url, import_project, resolve_runtime, detect_validation, command
 from supervisor.engine import Supervisor
 
 
@@ -77,7 +77,7 @@ class GitHubProjectTests(unittest.TestCase):
             runtime = resolve_runtime(default, project['id'])
             supervisor = Supervisor(runtime)
             try:
-                self.assertEqual(supervisor.config['allowed_files'], ['index.py'])
+                self.assertEqual(supervisor.config['allowed_files'], ['index.py', 'README.md'])
                 self.assertIn('tests/test_main.py', supervisor.config['protected_files'])
                 self.assertTrue(supervisor.config['chatgpt_quota_guard'])
                 self.assertTrue(supervisor.config['auto_promote_source'])
@@ -86,6 +86,9 @@ class GitHubProjectTests(unittest.TestCase):
                 supervisor.original_unchanged()
                 self.assertEqual(supervisor.store.get('control')['mode'], 'stopped')
                 self.assertEqual(status(runtime)['project']['name'], 'sample')
+                from supervisor.memory import refresh
+                memory = refresh(supervisor.repo, supervisor.config, supervisor.store, 'test-baseline')
+                self.assertIn('index.py', memory['files'])
                 (runtime.parent / 'source/index.py').write_text('answer = 43\n')
                 with self.assertRaises(RuntimeError):
                     supervisor.original_unchanged()
@@ -95,3 +98,22 @@ class GitHubProjectTests(unittest.TestCase):
                 save_project(default, dict(id=project['id'], name='X', idea='Y', instructions=''))
             with self.assertRaises(ValueError):
                 resolve_runtime(default, '../../etc')
+
+    def test_detects_project_validation_without_running_repo_commands(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'package.json').write_text(json.dumps({'scripts': {'test': 'node --test'}}))
+            self.assertEqual(detect_validation(root, ['package.json']), 'npm test')
+            self.assertEqual(detect_validation(root, ['go.mod']), 'go test ./...')
+            self.assertEqual(detect_validation(root, ['Cargo.toml']), 'cargo test')
+            self.assertEqual(detect_validation(root, ['App.csproj']), 'dotnet test')
+            with self.assertRaises(ValueError):
+                detect_validation(root, ['README.md'])
+
+    def test_npm_is_resolved_to_node_cli_without_a_shell(self):
+        try:
+            argv = command('npm test')
+        except ValueError:
+            self.skipTest('npm runtime unavailable')
+        self.assertTrue(argv[1].endswith('npm-cli.js'))
+        self.assertEqual(argv[-1], 'test')
