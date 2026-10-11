@@ -30,11 +30,12 @@ def restricted_token():
         kernel.CloseHandle(token)
 
 
-def main():
+def main(runtime=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--check', action='store_true', help='Check only; never launches a model turn')
-    args = parser.parse_args()
-    s = Supervisor(Path(__file__).resolve().parent / 'runtime-chatgpt-plus')
+    parser.add_argument('--runtime', type=Path, default=Path(__file__).resolve().parent / 'runtime-chatgpt-plus')
+    args = parser.parse_args([] if runtime is not None else None)
+    s = Supervisor(runtime or args.runtime)
     try:
         if restricted_token():
             raise Blocked('restricted_windows_execution_context')
@@ -68,8 +69,8 @@ def main():
 
 if __name__ == '__main__':
     try:
-        with exclusive(Path(__file__).resolve().parent / 'runtime-chatgpt-plus', 'launcher.lock'):
-            raise SystemExit(main())
+        # The supervisor itself locks its run; callers can lock this launcher too.
+        raise SystemExit(main())
     except Blocked as error:
         print(json.dumps({'status': 'blocked', 'reason': str(error)}))
         raise SystemExit(1)

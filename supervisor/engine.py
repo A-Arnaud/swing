@@ -62,20 +62,22 @@ def exclusive(root, filename="supervisor.lock"):
         handle.close()  # OS releases the lock, including on a crash; no stale PID killing.
 
 
-def initialize(root, source=None, execution_backend="direct"):
+def initialize(root, source=None, execution_backend="direct", source_files=None):
     if execution_backend not in {"direct", "ralph"}:
         raise Blocked("invalid_execution_backend")
     root = Path(root).resolve()
     if root.exists():
         raise Blocked("runtime_already_exists")
     root.mkdir(parents=True)
-    files = collect(source) if source else DEMO_FILES
+    files = collect(source, source_files) if source else DEMO_FILES
     manifest = initialize_repo(root / "repository", files)
     config = dict(DEFAULTS)
     config["execution_backend"] = execution_backend
     if source:
         config.update(mode="snapshot", allowed_files=[], protected_files=list(files),
                       validation_argv=[], benchmark_argv=[])
+        if source_files is not None:
+            config['source_files'] = list(source_files)
     (root / "config.json").write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
     store = Store(root / "state.sqlite")
     store.set("control", {"mode": "paused", "reason": "initialized_not_started"})
@@ -152,7 +154,7 @@ class Supervisor:
             raise Blocked("incomplete_promotion_requires_recovery")
         source = self.store.get("source")
         if source:
-            current = {name: digest(data) for name, data in collect(source).items()}
+            current = {name: digest(data) for name, data in collect(source, self.config.get('source_files')).items()}
             if current != self.store.get("source_manifest"):
                 raise Blocked("original_project_changed_reimport_required")
 

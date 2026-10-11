@@ -1,6 +1,7 @@
 'use strict';
 const $ = id => document.getElementById(id);
 const labels = {running:'En cours',stopped:'À l’arrêt',paused:'En pause',auto_paused:'Pause automatique',accepted_in_snapshot:'Validé',rejected:'Non retenu',interrupted:'Interrompu'};
+let activeProject = localStorage.getItem('swing-project') || '', projectVersion = 0;
 let state = null, currentView = 'activity', instructionDirty = false, busy = false, fetching = false, firstLoad = true;
 let lastPhase = '', lastCalls = null, lastCycle = '', lastCycleState = '', historySignature = '', toastTimer;
 const number = n => Number(n || 0).toLocaleString('fr-FR');
@@ -9,13 +10,14 @@ function element(tag, className, text) {const el = document.createElement(tag); 
 function toast(message) {$('toast').textContent = message; $('toast').classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => $('toast').classList.remove('show'), 3600);}
 async function api(route, body) {
   const options = body === undefined ? {cache:'no-store'} : {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)};
+  if(activeProject && !['/api/projects','/api/github/import'].includes(route))route+=(route.includes('?')?'&':'?')+'project='+encodeURIComponent(activeProject);
   const response = await fetch(route, options); const result = await response.json();
   if(!response.ok) throw new Error(result.status || result.error || 'request_failed');
   return result;
 }
 function showWorkspace() {$('project-picker').classList.add('hidden');$('workspace').classList.remove('hidden');localStorage.setItem('swing-screen','workspace');window.scrollTo(0,0);}
 function showPicker() {$('workspace').classList.add('hidden');$('project-picker').classList.remove('hidden');localStorage.setItem('swing-screen','home');window.scrollTo(0,0);loadProjects();}
-$('open-project').addEventListener('click',showWorkspace);
+$('open-project').addEventListener('click',()=>openConnectedProject(''));
 $('back-projects').addEventListener('click',showPicker);
 $('project-home').addEventListener('click',showPicker);
 if(localStorage.getItem('swing-screen') === 'workspace') showWorkspace();
@@ -80,14 +82,16 @@ function duration(cycle) {
   return Math.floor(n/60)+' min '+String(n%60).padStart(2,'0')+' s';
 }
 function render(s) {
-  state=s;syncProjectTheme(s.project);const control=s.control||{}, cycle=s.cycles?.[0], starting=!!s.start_pending && control.mode==='stopped';
+  state=s;syncProjectTheme(s.project);
+  $('open-app').classList.toggle('hidden',!!activeProject);
+  $('open-report').href='/report'+(activeProject?'?project='+encodeURIComponent(activeProject):'');const control=s.control||{}, cycle=s.cycles?.[0], starting=!!s.start_pending && control.mode==='stopped';
   const running=control.mode==='running';const stopped=control.mode==='stopped';
   $('connection').textContent='Connecté';
   $('mode').textContent=starting?'Démarrage…':labels[control.mode]||'En attente';
   $('dot').className='status-dot '+(starting?'running':control.mode);
   $('stop').textContent=starting?'Vérification…':stopped?'Reprendre ↗':'Arrêter □';
   $('stop').classList.toggle('stopping',!stopped && !starting);$('stop').disabled=busy||starting;
-  $('project-state').textContent=labels[control.mode]||'Connecté';$('project-last').textContent=cycle?.status==='accepted_in_snapshot'?'Dernière modification validée':'Voir l’avancement';
+  if(!activeProject){$('project-state').textContent=labels[control.mode]||'Connecté';$('project-last').textContent=cycle?.status==='accepted_in_snapshot'?'Dernière modification validée':'Voir l’avancement';}
   $('terminal-state').textContent=running?'boucle active':'boucle arrêtée';
   $('task-label').textContent=running?'EN CE MOMENT':'DERNIÈRE ACTIVITÉ';
   $('elapsed').textContent=duration(cycle);
@@ -113,7 +117,8 @@ function render(s) {
   $('context-size').textContent=s.instruction_delivery?.prompt_chars?number(s.instruction_delivery.prompt_chars)+' caractères envoyés au dernier appel':'Contexte ciblé selon la tâche';
   $('model').textContent=(s.model||'—')+' · '+(s.reasoning_effort||'—');
   const name=s.project?.name||'Projet';
-  for(const id of ['project-name','workspace-project','sidebar-project'])$(id).textContent=name;
+  for(const id of ['workspace-project','sidebar-project'])$(id).textContent=name;
+  if(!activeProject){$('project-name').textContent=name;$('project-state').textContent=labels[control.mode]||'Connecté';}
   $('project-title').textContent=name;
   $('terminal-project').textContent=name.toLowerCase().replaceAll(' ','-');document.title='SWING · '+name;
   if(!instructionDirty && document.activeElement!==$('instructions')){$('instructions').value=s.ralph_instructions||'';$('instruction-count').textContent=number($('instructions').value.length)+' / 4 000';}
@@ -130,7 +135,8 @@ function render(s) {
 }
 async function refresh(){
   if(fetching)return;fetching=true;
-  try{render(await api('/api/status'));}
+  const version=projectVersion;
+  try{const result=await api('/api/status');if(version===projectVersion)render(result);}
   catch{$('connection').textContent='Reconnexion…';$('stop').disabled=true;}
   finally{fetching=false;}
 }
@@ -144,7 +150,8 @@ $('stop').addEventListener('click',async()=>{
 let loadingCode=false,lastDiff='';
 async function loadChanges(){
   if(loadingCode)return;loadingCode=true;
-  try{const data=await api('/api/changes');const signature=JSON.stringify(data);if(signature===lastDiff)return;lastDiff=signature;
+  const version=projectVersion;
+  try{const data=await api('/api/changes');if(version!==projectVersion)return;const signature=JSON.stringify(data);if(signature===lastDiff)return;lastDiff=signature;
     $('diff-label').textContent=data.state==='working'?'Modifications en cours':'Dernière modification appliquée';
     $('changes-dot').style.opacity=data.files?.some(f=>f.diff)?'1':'0';
     const rows=(data.files||[]).map(file=>{
@@ -178,11 +185,12 @@ async function loadProjects(){
   try{const data=await api('/api/projects');document.querySelectorAll('.draft-card').forEach(x=>x.remove());
     for(const project of data.projects||[]){
       const card=element('button','project-card draft-card');const top=element('div','project-card-top');
-      top.append(element('span','project-monogram',project.name.slice(0,2).toUpperCase()),element('span','card-tag','Brief'));
-      card.append(top,element('strong','',project.name),element('p','',project.idea.slice(0,100)+(project.idea.length>100?'…':'')),element('span','card-link','Modifier ↗'));
-      card.addEventListener('click',()=>openProjectDialog(project));$('project-grid').insertBefore(card,$('new-project-card'));
+      top.append(element('span','project-monogram',project.name.slice(0,2).toUpperCase()),element('span','card-tag',project.state==='connected'?'GitHub':'Brief'));
+      card.append(top,element('strong','',project.name),element('p','',project.idea.slice(0,100)+(project.idea.length>100?'…':'')),element('span','card-link',project.state==='connected'?'Ouvrir ↗':'Modifier ↗'));
+      card.addEventListener('click',()=>project.state==='connected'?openConnectedProject(project.id):openProjectDialog(project));$('project-grid').insertBefore(card,$('new-project-card'));
     }
-    $('project-count').textContent='1 projet connecté'+(data.projects?.length?' · '+data.projects.length+' brief(s)':'');
+    const connected=(data.projects||[]).filter(p=>p.state==='connected').length, briefs=(data.projects||[]).length-connected;
+    $('project-count').textContent=(1+connected)+' projets'+(briefs?' · '+briefs+' briefs':'');
   }catch{/* The connected project remains available if draft storage is unavailable. */}
 }
 const letters={
@@ -258,3 +266,25 @@ $('theme-hex').addEventListener('input',()=>{
 document.querySelectorAll('[data-color]').forEach(button=>button.addEventListener('click',()=>{projectTheme.color=button.dataset.color;saveProjectTheme();}));
 $('theme-reset').addEventListener('click',()=>{projectTheme={mode:'dark',color:'#a33361'};saveProjectTheme();});
 applyProjectTheme();
+
+async function openConnectedProject(id){
+  activeProject=id;localStorage.setItem('swing-project',id);projectVersion++;
+  state=null;instructionDirty=false;firstLoad=true;lastPhase='';lastCalls=null;lastCycle='';historySignature='';lastDiff='';
+  $('terminal-log').replaceChildren();$('events').replaceChildren();$('code-diff').replaceChildren();
+  $('instructions').value='';$('instruction-dirty').textContent='';$('phase').textContent='Lecture du projet…';$('stop').disabled=true;
+  showWorkspace();selectView('activity');
+  // Wait for an old request to settle; its version guard prevents stale rendering.
+  while(fetching)await new Promise(resolve=>setTimeout(resolve,50));
+  await refresh();
+}
+$('import-github').addEventListener('click',()=>{$('github-feedback').textContent='';$('github-dialog').showModal();});
+$('github-form').addEventListener('submit',async event=>{
+  event.preventDefault();$('github-submit').disabled=true;$('github-feedback').textContent='Clonage et préparation…';
+  try{
+    const project=await api('/api/github/import',{url:$('github-url').value,validation:$('github-validation').value,instructions:$('github-instructions').value});
+    $('github-dialog').close();toast('Dépôt importé. Prêt pour les consignes et les tests.');await loadProjects();await openConnectedProject(project.id);
+  }catch(error){
+    const reasons={github_https_url_required:'Utilisez une URL https://github.com/compte/projet.',github_clone_failed_check_access:'Clonage impossible. Vérifiez le dépôt et votre accès GitHub.',validation_executable_required:'Indiquez un exécutable disponible (python, node…).',no_supported_editable_source:'Aucun fichier source modifiable reconnu.',repository_contains_credentials:'Des identifiants sont présents dans le dépôt. Retirez-les avant l’import.'};
+    $('github-feedback').textContent=reasons[error.message]||'Import impossible : '+error.message;
+  }finally{$('github-submit').disabled=false;}
+});

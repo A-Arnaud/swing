@@ -10,7 +10,7 @@ from .workspace import collect
 def promote(supervisor, worktree, names, cycle_id):
     source = Path(supervisor.store.get('source')).resolve()
     expected = supervisor.store.get('source_manifest')
-    current = {name: digest(data) for name, data in collect(source).items()}
+    current = {name: digest(data) for name, data in collect(source, supervisor.config.get('source_files')).items()}
     if current != expected:
         raise Blocked('source_changed_before_promotion')
     directory = supervisor.root / 'backups' / (cycle_id + '-source')
@@ -53,7 +53,7 @@ def promote(supervisor, worktree, names, cycle_id):
             written.append((name, target, old, new))
         updated = dict(expected)
         updated.update({name: digest(new) for name, _, _, new in records})
-        if {name: digest(data) for name, data in collect(source).items()} != updated:
+        if {name: digest(data) for name, data in collect(source, supervisor.config.get('source_files')).items()} != updated:
             raise Blocked('source_changed_during_promotion')
         supervisor.store.set('source_manifest', updated)
         metadata['status'] = 'applied'

@@ -25,7 +25,8 @@ def status(runtime):
                       reasoning_effort=config.get('reasoning_effort'), model_calls=calls,
                       token_usage={'measured_total': tokens, 'unknown_calls': incomplete or 0},
                       no_progress_cycles=store.get('no_progress', 0),
-                      project={'name': project.name.replace('-', ' ').title(), 'path': str(project)},
+                      project={'name': config.get('project_name') or project.name.replace('-', ' ').title(),
+                               'path': str(project), 'github_url': config.get('github_url')},
                       ralph_instructions=store.get('ralph_instructions', ''),
                       instructions_fingerprint=snapshot(store)['fingerprint'],
                       cycles=store.history(12), proposals=store.proposals())
@@ -92,6 +93,10 @@ def save_project(runtime, body):
     if not isinstance(identifier, str) or len(identifier) != 32 or any(c not in '0123456789abcdef' for c in identifier):
         raise ValueError('invalid_project_id')
     folder = runtime.parent / 'swing-projects' / identifier
+    if (folder / 'project.json').exists():
+        existing = json.loads((folder / 'project.json').read_text(encoding='utf-8'))
+        if existing.get('state') == 'connected':
+            raise ValueError('connected_project_requires_workspace')
     folder.mkdir(parents=True, exist_ok=True)
     result = {field: body[field].strip() for field in ('name', 'idea', 'instructions')}
     result.update(id=identifier, state='brief', updated_at=time.time())

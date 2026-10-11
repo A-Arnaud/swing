@@ -16,10 +16,20 @@ police ou service externe n'est chargé.
 - Navigation au clavier, disposition mobile, animations respectant reduced-motion.
 
 Un nouveau brief n'est pas un runtime : il n'exécute aucun code ni appel IA.
-Le branchement de nouveaux dossiers, la configuration de leurs validations et
-l'exécution simultanée de plusieurs projets restent à développer. L'interface
-l'indique avant l'enregistrement ; elle ne présente pas un brief comme un projet
-déjà développé. Les données se trouvent dans `swing-projects/<id>/project.json`.
+Le bouton **Importer GitHub** clone un dépôt public ou privé accessible via Git
+sur le poste. Une URL HTTPS GitHub, une commande de test et les consignes préparent
+un runtime indépendant. Les projets connectés sont ouverts depuis leurs cartes.
+Le choix de projet est conservé dans le navigateur et chaque API vise son runtime.
+Le code reste dans `swing-projects/<id>/source`, les preuves et sauvegardes dans
+`swing-projects/<id>/runtime`. Aucun push, installation de dépendances ou lancement
+du projet importé n'est automatique. **Reprendre** lance Ralph et revérifie le quota.
+Les tests de référence doivent réussir avant une recherche IA. Les commandes
+Python chargent le code de la copie candidate avant un éventuel paquet installé.
+Les tests, configurations et secrets restent protégés ; seules les sources
+existantes reconnues sont modifiables. Les changements validés sont appliqués
+à la copie locale. Pour l'instant, seuls des exécutables disponibles directement
+(comme Python ou Node) sont acceptés ; les scripts shell et lanceurs npm.cmd ne
+sont pas exécutés par l'importeur. Les briefs restent enregistrés séparément.
 
 ## Consignes : des effets vérifiables
 

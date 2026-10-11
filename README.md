@@ -15,8 +15,12 @@ au projet reel des modifications acceptees, avec sauvegarde.
 - Theme sombre, noir ou clair et couleur personnalisee par projet.
 - Memoire de code et contexte cible pour limiter les informations repetees.
 
-Token Radar / RugsTracker est le premier projet connecte. Les autres projets
-peuvent etre enregistres comme briefs ; leur branchement autonome reste a developper.
+Token Radar / RugsTracker est le premier projet connecte. Le bouton Importer
+GitHub prepare un projet independant depuis un depot public ou prive accessible
+sur le poste. Indiquer une commande de test et les consignes, puis ouvrir sa carte
+et demander la reprise de Ralph. Les changements valides restent dans la copie
+locale du depot importe ; aucun push ou installation de dependances automatique.
+Les idees sans depot peuvent encore etre enregistrees comme briefs.
 
 ## Structure
 

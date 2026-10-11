@@ -3,15 +3,17 @@ import argparse
 import contextlib
 import json
 import sqlite3
+import subprocess
 import sys
 import threading
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, parse_qs
 
 from supervisor.store import Store
 from dashboard_data import status, changes, projects, save_project
+from github_projects import import_project, resolve_runtime
 
 
 def serve(runtime):
@@ -25,8 +27,13 @@ def serve(runtime):
             self.start_lock = threading.Lock()
             self.start_thread = None
             self.start_error = None
+            self.workers = {}
 
     class Handler(BaseHTTPRequestHandler):
+        def project_runtime(self):
+            identifiers = parse_qs(urlsplit(self.path).query).get('project', [''])
+            return resolve_runtime(runtime, identifiers[0])
+
         def log_message(self, *_args):
             pass
 
@@ -50,6 +57,11 @@ def serve(runtime):
                 self.send_error(403)
                 return
             route = urlsplit(self.path).path
+            try:
+                selected = self.project_runtime()
+            except (ValueError, OSError):
+                self.send_bytes(b'{"error":"project_unavailable"}', 'application/json', 404)
+                return
             if route == '/':
                 path, content = Path(__file__).with_name('dashboard.html'), 'text/html; charset=utf-8'
                 self.send_bytes(path.read_bytes(), content)
@@ -64,17 +76,21 @@ def serve(runtime):
             elif route == '/favicon.ico':
                 self.send_bytes(b'', 'image/x-icon', 204)
             elif route == '/report':
-                path = runtime / 'reports' / 'index.html'
+                path = selected / 'reports' / 'index.html'
+                if not path.exists():
+                    self.send_bytes(b'No cycles yet.', 'text/plain; charset=utf-8')
+                    return
                 self.send_bytes(path.read_bytes(), 'text/html; charset=utf-8')
             elif route == '/api/status':
-                summary = status(runtime)
-                summary['start_pending'] = bool(self.server.start_thread and self.server.start_thread.is_alive())
-                summary['start_error'] = self.server.start_error
+                summary = status(selected)
+                worker = self.server.workers.get(str(selected))
+                summary['start_pending'] = bool(worker and worker.poll() is None and summary['control']['mode'] == 'stopped')
+                summary['start_error'] = None
                 payload = json.dumps(summary, ensure_ascii=False).encode('utf-8')
                 self.send_bytes(payload, 'application/json; charset=utf-8')
             elif route in {'/api/changes', '/api/projects'}:
                 try:
-                    payload = changes(runtime) if route == '/api/changes' else {'projects': projects(runtime)}
+                    payload = changes(selected) if route == '/api/changes' else {'projects': projects(runtime)}
                     self.send_bytes(json.dumps(payload, ensure_ascii=False).encode('utf-8'), 'application/json; charset=utf-8')
                 except (OSError, ValueError, RuntimeError):
                     self.send_bytes(b'{"error":"data_unavailable"}', 'application/json; charset=utf-8', 503)
@@ -84,10 +100,21 @@ def serve(runtime):
         def do_POST(self):
             origin = f'http://127.0.0.1:{self.server.server_port}'
             route = urlsplit(self.path).path
-            if not self.local_request() or self.headers.get('Origin') != origin or route not in {'/api/stop','/api/start','/api/instructions','/api/projects'}:
+            if not self.local_request() or self.headers.get('Origin') != origin or route not in {'/api/stop','/api/start','/api/instructions','/api/projects','/api/github/import'}:
                 self.send_error(403)
                 return
             try:
+                selected = self.project_runtime()
+                if route == '/api/github/import':
+                    length = int(self.headers.get('Content-Length', '0'))
+                    if not 0 < length <= 20000:
+                        raise ValueError('invalid_length')
+                    body = json.loads(self.rfile.read(length))
+                    if not isinstance(body, dict):
+                        raise ValueError('invalid_import')
+                    result = import_project(runtime, body)
+                    self.send_bytes(json.dumps(result).encode(), 'application/json; charset=utf-8', 201)
+                    return
                 if route == '/api/projects':
                     length = int(self.headers.get('Content-Length', '0'))
                     if not 0 < length <= 40000:
@@ -108,7 +135,7 @@ def serve(runtime):
                     if not isinstance(instructions, str) or len(instructions) > 4000:
                         self.send_bytes(b'{"status":"invalid_instructions"}', 'application/json; charset=utf-8', 400)
                         return
-                    store = Store(runtime / 'state.sqlite')
+                    store = Store(selected / 'state.sqlite')
                     store.set('ralph_instructions', instructions.strip())
                     store.set('instructions_saved_at', __import__('time').time())
                     store.close()
@@ -116,7 +143,7 @@ def serve(runtime):
                     return
                 if route == '/api/start':
                     with self.server.start_lock:
-                        db = sqlite3.connect((runtime / 'state.sqlite').resolve().as_uri() + '?mode=ro', uri=True, timeout=2)
+                        db = sqlite3.connect((selected / 'state.sqlite').resolve().as_uri() + '?mode=ro', uri=True, timeout=2)
                         try:
                             row = db.execute("SELECT value FROM meta WHERE key='control'").fetchone()
                             control = json.loads(row[0]) if row else {}
@@ -125,38 +152,25 @@ def serve(runtime):
                         if control.get('mode') != 'stopped':
                             self.send_bytes(b'{"status":"already_running"}', 'application/json; charset=utf-8')
                             return
-                        if self.server.start_thread is not None and self.server.start_thread.is_alive():
+                        worker = self.server.workers.get(str(selected))
+                        if worker and worker.poll() is None:
                             self.send_bytes(b'{"status":"already_starting"}', 'application/json; charset=utf-8')
                             return
                         prototype = Path(__file__).parent
-                        logdir = runtime / 'logs'
+                        logdir = selected / 'logs'
                         logdir.mkdir(exist_ok=True)
                         tag = uuid.uuid4().hex
                         stdout = logdir / f'dashboard-start-{tag}.stdout.log'
                         stderr = logdir / f'dashboard-start-{tag}.stderr.log'
-                        def run_supervisor():
-                            from launch_project import main as launch_main
-                            from supervisor.engine import exclusive
-                            old_argv = sys.argv
-                            self.server.start_error = None
-                            try:
-                                with stdout.open('w', encoding='utf-8') as out, stderr.open('w', encoding='utf-8') as err:
-                                    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-                                        sys.argv = ['launch_project.py']
-                                        with exclusive(runtime, 'launcher.lock'):
-                                            launch_main()
-                            except BaseException as exc:
-                                self.server.start_error = str(exc) or type(exc).__name__
-                                with stderr.open('a', encoding='utf-8') as err:
-                                    err.write(f'\nDashboard relaunch failed: {self.server.start_error}\n')
-                            finally:
-                                sys.argv = old_argv
-                        self.server.start_thread = threading.Thread(target=run_supervisor, name='ralph-dashboard-start', daemon=True)
-                        self.server.start_thread.start()
+                        with stdout.open('w', encoding='utf-8') as out, stderr.open('w', encoding='utf-8') as err:
+                            self.server.workers[str(selected)] = subprocess.Popen(
+                                [sys.executable, str(prototype / 'launch_project.py'), '--runtime', str(selected)],
+                                cwd=prototype, stdout=out, stderr=err,
+                                creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0)
                     self.send_bytes(b'{"status":"starting","quota_check":"before_model_call"}',
                                     'application/json; charset=utf-8', 202)
                     return
-                store = Store(runtime / 'state.sqlite')
+                store = Store(selected / 'state.sqlite')
                 current = store.get('control', {})
                 if current.get('mode') == 'stopped':
                     store.close()
@@ -168,8 +182,9 @@ def serve(runtime):
                 store.set('phase', 'Arrêt demandé depuis le tableau de bord')
                 store.close()
                 self.send_bytes(b'{"status":"stopped"}', 'application/json; charset=utf-8')
-            except (ValueError, TypeError):
-                self.send_bytes(b'{"status":"invalid_request"}', 'application/json; charset=utf-8', 400)
+            except (ValueError, TypeError) as error:
+                reason = str(error) if isinstance(error, ValueError) else 'invalid_request'
+                self.send_bytes(json.dumps({'status': reason}).encode(), 'application/json; charset=utf-8', 400)
             except (OSError, sqlite3.Error):
                 self.send_bytes(b'{"status":"error"}', 'application/json; charset=utf-8', 503)
 

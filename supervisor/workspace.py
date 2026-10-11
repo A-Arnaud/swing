@@ -8,11 +8,33 @@ TOP_FILES = {"README.md", "STATUS.md", "pyproject.toml", "requirements.lock", "r
 TOP_DIRS = {"src", "tests", "docs", "specifications", "scripts", "migrations", "examples"}
 
 
-def collect(source):
+def collect(source, selected=None):
     """Allowlisted text/code only. No live databases, environment, Git metadata or links."""
     source = Path(source).resolve()
     files = {}
     total = 0
+    if selected is not None:
+        for name in selected:
+            relative = safe_relative(name)
+            if forbidden(name):
+                raise Blocked('protected_import_path')
+            path = source / relative
+            if not path.resolve().is_relative_to(source):
+                raise Blocked('path_outside_source')
+            for parent in [path, *path.parents]:
+                if parent == source:
+                    break
+                plain_file(parent)
+            data = path.read_bytes()
+            if len(data) > 2_000_000 or b'\0' in data or secret_like(data):
+                raise Blocked('snapshot_content_requires_review')
+            total += len(data)
+            if total > 25_000_000:
+                raise Blocked('snapshot_size_limit')
+            files[name] = data
+        if not files:
+            raise Blocked('empty_snapshot')
+        return files
     def visit(directory):
         nonlocal total
         for path in sorted(directory.iterdir()):
