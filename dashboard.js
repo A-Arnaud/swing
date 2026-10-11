@@ -262,8 +262,6 @@ const letters={
 };
 $('ascii-logo').textContent=Array.from({length:7},(_,row)=>[...'SWING'].map(ch=>letters[ch][row]).join('  ')).join('\n');
 const svg=$('swing-art');
-const artRotation=document.createElementNS('http://www.w3.org/2000/svg','g');
-svg.append(artRotation);
 for(let ring=0;ring<52;ring++){
   const phi=ring/52*Math.PI*2;let points=[];
   for(let j=0;j<=220;j++){
@@ -272,44 +270,8 @@ for(let ring=0;ring<52;ring++){
     points.push((j?'L':'M')+x.toFixed(2)+','+y.toFixed(2));
   }
   const path=document.createElementNS('http://www.w3.org/2000/svg','path');
-  path.setAttribute('d',points.join(' '));path.setAttribute('stroke',ring%7===0?'#e9c2cf':'#ad939c');path.setAttribute('stroke-width','.65');path.setAttribute('opacity',String(.22+.55*ring/52));artRotation.append(path);
+  path.setAttribute('d',points.join(' '));path.setAttribute('stroke',ring%7===0?'#e9c2cf':'#ad939c');path.setAttribute('stroke-width','.65');path.setAttribute('opacity',String(.22+.55*ring/52));svg.append(path);
 }
-// Rotate the drawing around its fixed centre; the SVG itself never moves.
-const artReducedMotion=matchMedia('(prefers-reduced-motion: reduce)');
-let artAngle=0, artTarget=0, artFrame=0, artLastTime=0;
-function turnArt(time){
-  artFrame=0;
-  if(document.hidden || $('project-picker').classList.contains('hidden')){artLastTime=0;return;}
-  const delta=((artTarget-artAngle+540)%360)-180;
-  const elapsed=artLastTime?Math.min(time-artLastTime,64):16;
-  artLastTime=time;
-  artAngle+=delta*(1-Math.exp(-elapsed/160));
-  if(Math.abs(delta)<.05)artAngle=artTarget;
-  artAngle=(artAngle+360)%360;
-  artRotation.setAttribute('transform',`rotate(${artAngle.toFixed(3)} 300 245)`);
-  if(Math.abs(delta)>=.05)artFrame=requestAnimationFrame(turnArt);
-  else artLastTime=0;
-}
-document.addEventListener('pointermove',event=>{
-  if(event.pointerType==='touch' || document.hidden || $('project-picker').classList.contains('hidden'))return;
-  const rect=svg.getBoundingClientRect();
-  const x=event.clientX-(rect.left+rect.width/2), y=event.clientY-(rect.top+rect.height/2);
-  if(Math.hypot(x,y)<32)return;
-  artTarget=(Math.atan2(y,x)*180/Math.PI+360)%360;
-  // Windows may disable animations globally. Still follow the pointer,
-  // without an interpolated animation when reduced motion is requested.
-  if(artReducedMotion.matches){
-    pauseArt();artAngle=artTarget;
-    artRotation.setAttribute('transform',`rotate(${artAngle.toFixed(3)} 300 245)`);
-    return;
-  }
-  if(!artFrame)artFrame=requestAnimationFrame(turnArt);
-},{passive:true});
-function pauseArt(){
-  cancelAnimationFrame(artFrame);artFrame=0;artLastTime=0;
-}
-document.addEventListener('visibilitychange',()=>{if(document.hidden)pauseArt();});
-artReducedMotion.addEventListener('change',pauseArt);
 refresh();loadProjects();
 setInterval(()=>{if(!document.hidden)refresh();},2000);
 setInterval(()=>{if(!document.hidden && currentView==='changes' && !$('workspace').classList.contains('hidden'))loadChanges();},4000);
