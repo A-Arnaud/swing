@@ -279,7 +279,7 @@ const artReducedMotion=matchMedia('(prefers-reduced-motion: reduce)');
 let artAngle=0, artTarget=0, artFrame=0, artLastTime=0;
 function turnArt(time){
   artFrame=0;
-  if(document.hidden || $('project-picker').classList.contains('hidden') || artReducedMotion.matches){artLastTime=0;return;}
+  if(document.hidden || $('project-picker').classList.contains('hidden')){artLastTime=0;return;}
   const delta=((artTarget-artAngle+540)%360)-180;
   const elapsed=artLastTime?Math.min(time-artLastTime,64):16;
   artLastTime=time;
@@ -291,11 +291,18 @@ function turnArt(time){
   else artLastTime=0;
 }
 document.addEventListener('pointermove',event=>{
-  if(event.pointerType==='touch' || document.hidden || artReducedMotion.matches || $('project-picker').classList.contains('hidden'))return;
+  if(event.pointerType==='touch' || document.hidden || $('project-picker').classList.contains('hidden'))return;
   const rect=svg.getBoundingClientRect();
   const x=event.clientX-(rect.left+rect.width/2), y=event.clientY-(rect.top+rect.height/2);
   if(Math.hypot(x,y)<32)return;
   artTarget=(Math.atan2(y,x)*180/Math.PI+360)%360;
+  // Windows may disable animations globally. Still follow the pointer,
+  // without an interpolated animation when reduced motion is requested.
+  if(artReducedMotion.matches){
+    pauseArt();artAngle=artTarget;
+    artRotation.setAttribute('transform',`rotate(${artAngle.toFixed(3)} 300 245)`);
+    return;
+  }
   if(!artFrame)artFrame=requestAnimationFrame(turnArt);
 },{passive:true});
 function pauseArt(){
