@@ -1,10 +1,15 @@
 import json
 import sqlite3
 import time
+from pathlib import Path
 
 
 class Store:
-    def __init__(self, path):
+    def __init__(self, path, readonly=False):
+        self.path = Path(path).resolve()
+        if readonly:
+            self.db = sqlite3.connect(self.path.as_uri() + '?mode=ro', uri=True, timeout=2)
+            return
         self.db = sqlite3.connect(path, timeout=10)
         self.db.execute("PRAGMA journal_mode=WAL")
         self.db.executescript("""
@@ -41,6 +46,12 @@ class Store:
     def proposal_state(self, id, status, attempt=False):
         with self.db:
             self.db.execute("UPDATE proposals SET status=?,attempts=attempts+? WHERE id=?", (status, int(attempt), id))
+
+    def update_proposal(self, proposal):
+        # Keep the original identity and attempts when refreshing a queued task.
+        with self.db:
+            self.db.execute("UPDATE proposals SET payload=? WHERE id=?",
+                            (json.dumps(proposal), proposal['id']))
 
     def cycle(self, id, report, status="running"):
         with self.db:

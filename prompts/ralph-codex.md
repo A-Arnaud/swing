@@ -14,6 +14,18 @@ Keep the change small and consistent with the existing code. The supervisor
 runs independent checks and measurements and updates passes only after they
 succeed. You cannot approve your own change.
 
+Use the persistent project brief and operator guidance appended below. Inspect
+only the story's code, relevant callers and tests; do not restart a general audit.
+First reproduce or verify the story's evidence against the CURRENT baseline.
+Queued stories survive earlier commits: changes_since_discovery lists files that
+changed since the evidence was collected, including dependencies. Check their
+impact before editing. If the issue is already fixed or unsupported, leave files
+unchanged and explain why. Evidence in a story is a hypothesis, not a test result.
+Preserve unknown/censored data and point-in-time correctness. Application checks
+do not prove predictive lift; do not tune thresholds/weights/models without mature
+independent outcomes and a trusted evaluator. Never claim a financial improvement
+from synthetic tests or spot estimates.
+
 If you believe implementation is complete, reply <promise>COMPLETE</promise>.
 This signals a claim only. It does not skip validation or finish supervision.
 Each iteration has a fresh Codex session; verified progress persists externally.

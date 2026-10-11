@@ -1,3 +1,5 @@
+> Configuration active : voir [AUTONOMOUS.md](AUTONOMOUS.md). Les notes de pr?paration ci-dessous sont historiques.
+
 # Intégration Ralph–Codex pour Windows
 
 Le prototype contient désormais une **adaptation Python de Ralph**, utilisable

@@ -1,3 +1,5 @@
+> Configuration active : voir [AUTONOMOUS.md](AUTONOMOUS.md). Les notes de pr?paration ci-dessous sont historiques.
+
 # Exécution avec ChatGPT Plus
 
 Runtime préparé : `runtime-chatgpt-plus`. Modèle exact `gpt-6.1-sol`,

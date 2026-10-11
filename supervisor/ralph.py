@@ -44,6 +44,9 @@ class RalphExecutor:
                'userStories': [{'id': proposal['id'], 'title': proposal['problem'],
                                 'description': proposal['strategy'], 'priority': 1,
                                 'acceptanceCriteria': [proposal['success_metric']],
+                                'evidence': proposal['evidence'],
+                                'evidence_base': proposal.get('evidence_base', proposal['base']),
+                                'changes_since_discovery': proposal.get('changes_since_discovery', []),
                                 'files': proposal['files'], 'passes': False}],
                'status': 'running', 'base': proposal['base']}
         atomic_json(directory / 'prd.json', prd)
@@ -54,9 +57,13 @@ class RalphExecutor:
                    for r in self.store.history(10) if r['status'] != 'running']
         atomic_json(directory / 'progress.json', history)
         template = (Path(__file__).resolve().parents[1] / 'prompts/ralph-codex.md').read_text(encoding='utf-8')
-        prompt = (template + '\nPRD_DATA_BEGIN\n' + json.dumps(prd) +
-                  '\nPRD_DATA_END\nVERIFIED_PROGRESS_BEGIN\n' + json.dumps(history) +
-                  '\nVERIFIED_PROGRESS_END\n')
+        prompt = template + '\nPRD_DATA_BEGIN\n' + json.dumps(prd, ensure_ascii=False, separators=(',', ':')) + '\nPRD_DATA_END\n'
+        if hasattr(self.transport, 'project_context'):
+            # Context already contains relevant verified results; do not send them twice.
+            prompt += self.transport.project_context(worktree, proposal['base'], proposal['files'],
+                                                     proposal.get('instructions_fingerprint'))
+        else:
+            prompt += '\nVERIFIED_PROGRESS_BEGIN\n' + json.dumps(history) + '\nVERIFIED_PROGRESS_END\n'
         # Each call launches codex exec anew; never resumes an implementation thread.
         result = self.transport.call(worktree, prompt)
         # COMPLETE is recorded as a claim, never evidence of correctness.

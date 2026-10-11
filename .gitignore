@@ -9,3 +9,15 @@ node_modules/
 *.bundle
 *.patch
 *.log
+backups/
+previews/
+swing-projects/
+.env
+.env.*
+!.env.example
+.venv/
+*.err.log
+*.bundle
+ralph-comparison-results.json
+ralph-comparison.html
+validation-results.json

@@ -6,7 +6,7 @@ import os
 from ctypes import wintypes
 from pathlib import Path
 
-from supervisor.engine import Supervisor
+from supervisor.engine import Supervisor, exclusive
 from supervisor.quota import read_quota
 from supervisor.reports import render
 from supervisor.safety import Blocked
@@ -43,14 +43,16 @@ def main():
         s.store.set('chatgpt_quota', quota)
         if quota['exhausted']:
             raise Blocked('chatgpt_quota_exhausted')
-        if not s.config['isolated_execution_confirmed']:
+        if not (s.config['isolated_execution_confirmed'] is True or s.config.get('local_execution_authorized', False) is True):
             raise Blocked('external_isolation_not_confirmed')
         if args.check:
             print(json.dumps({'status': 'ready', 'model': s.config['model'],
-                              'reasoning_effort': s.config['reasoning_effort']}))
+                              'reasoning_effort': s.config['reasoning_effort'], 'isolated_execution_confirmed': s.config['isolated_execution_confirmed'], 'local_execution_authorized': s.config.get('local_execution_authorized', False)}))
             return 0
-        # The user explicitly authorized launch. Preserve the operator's safety attestation.
+        # Launch uses the operator's isolation attestation or explicit local authorization.
         s.control('running')
+        render(s)
+        print(json.dumps({'status': 'started', 'model': s.config['model'], 'reasoning_effort': s.config['reasoning_effort'], 'execution_backend': s.config['execution_backend']}), flush=True)
         s.run()
         print(json.dumps({'status': 'ended', 'control': s.store.get('control')}))
         return 0
@@ -65,4 +67,9 @@ def main():
 
 
 if __name__ == '__main__':
-    raise SystemExit(main())
+    try:
+        with exclusive(Path(__file__).resolve().parent / 'runtime-chatgpt-plus', 'launcher.lock'):
+            raise SystemExit(main())
+    except Blocked as error:
+        print(json.dumps({'status': 'blocked', 'reason': str(error)}))
+        raise SystemExit(1)

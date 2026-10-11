@@ -37,8 +37,8 @@ DEMO_FILES = {
 
 
 @contextlib.contextmanager
-def exclusive(root):
-    path = root / "supervisor.lock"
+def exclusive(root, filename="supervisor.lock"):
+    path = root / filename
     handle = path.open("a+b")
     try:
         if handle.seek(0, 2) == 0:
@@ -103,8 +103,13 @@ class Supervisor:
             self.executor = executor
         elif backend == "ralph":
             from .ralph import RalphDemoTransport, RalphExecutor
-            transport = (RalphDemoTransport() if self.config["mode"] == "demo" else
-                         CodexExecutor(self.config, self.store, self.interrupted))
+            if self.config.get("agent_transport") == "conversation":
+                from .conversation import ConversationExecutor
+                from .reports import render
+                transport = ConversationExecutor(self.root, self.config, self.store, self.interrupted, lambda: render(self))
+            else:
+                transport = (RalphDemoTransport() if self.config["mode"] == "demo" else
+                             CodexExecutor(self.config, self.store, self.interrupted))
             self.executor = RalphExecutor(self.root, transport, self.store, self.interrupted)
         else:
             self.executor = (DemoExecutor() if self.config["mode"] == "demo" else
@@ -120,6 +125,11 @@ class Supervisor:
 
     def interrupted(self):
         return self.store.get("control", {}).get("mode") != "running"
+
+    def phase(self, value):
+        from .reports import render
+        self.store.set("phase", value)
+        render(self)
 
     def ready(self):
         control = self.store.get("control")
@@ -138,6 +148,8 @@ class Supervisor:
         return True
 
     def original_unchanged(self):
+        if self.store.get("pending_promotion"):
+            raise Blocked("incomplete_promotion_requires_recovery")
         source = self.store.get("source")
         if source:
             current = {name: digest(data) for name, data in collect(source).items()}
@@ -180,19 +192,41 @@ class Supervisor:
         return {"metric": metric, "samples": samples, "median": statistics.median(samples)}
 
     def choose(self):
+        from .guidance import matches, snapshot
+        guidance = snapshot(self.store)
         candidates = []
+        base = git(self.repo, "rev-parse", "validated")
         for entry in self.store.proposals():
             proposal = entry["payload"]
-            if entry["status"] != "queued" or entry["attempts"] >= self.config["max_attempts_per_proposal"]:
+            if entry["status"] not in {"queued", "deferred_instructions"} or entry["attempts"] >= self.config["max_attempts_per_proposal"]:
                 continue
-            if proposal["base"] != git(self.repo, "rev-parse", "validated"):
-                self.store.proposal_state(entry["id"], "obsolete")
+            if not matches(proposal, guidance):
+                self.store.proposal_state(entry['id'], 'deferred_instructions')
                 continue
-            if proposal["risk"] != "low" and not self.store.get("approval:" + entry["id"], False):
-                self.store.proposal_state(entry["id"], "awaiting_approval")
-                continue
+            if entry['status'] == 'deferred_instructions':
+                self.store.proposal_state(entry['id'], 'queued')
             if any(name not in self.config["allowed_files"] for name in proposal["files"]):
                 self.store.proposal_state(entry["id"], "outside_trusted_scope")
+                continue
+            if proposal["base"] != base:
+                if not self.config.get('persistent_backlog', False):
+                    self.store.proposal_state(entry["id"], "obsolete")
+                    continue
+                evidence_base = proposal.get('evidence_base', proposal['base'])
+                # Only carry work forward along the supervisor's own validated history.
+                if git(self.repo, 'merge-base', evidence_base, base) != evidence_base:
+                    self.store.proposal_state(entry['id'], 'obsolete')
+                    continue
+                proposal = {**proposal, 'base': base, 'evidence_base': evidence_base,
+                            'recheck_required': True,
+                            'changes_since_discovery': git(self.repo, 'diff', '--name-only',
+                                                           evidence_base, base).splitlines()}
+                self.store.update_proposal(proposal)
+                # An approval on an old baseline never silently approves a new one.
+                if proposal['risk'] != 'low':
+                    self.store.set('approval:' + entry['id'], False)
+            if proposal["risk"] != "low" and not self.store.get("approval:" + entry["id"], False):
+                self.store.proposal_state(entry["id"], "awaiting_approval")
                 continue
             score = proposal["impact"] / proposal["cost"]
             candidates.append((score, entry["id"], proposal))
@@ -231,33 +265,45 @@ class Supervisor:
                 git(self.repo, "worktree", "add", "-b", branch, str(worktree), base)
                 report.update(branch=branch, worktree=str(worktree))
                 protected = tree_hash(worktree, self.config["protected_files"])
+                self.phase("Vérification du projet avant modification")
                 report["before_validation"] = self.verify(worktree)
                 report["before_measurement"] = self.measure(worktree)
                 proposal = self.choose()
+                report['proposal_source'] = 'backlog' if proposal else 'discovery'
                 if proposal is None:
+                    self.phase("Recherche ciblée à partir de la mémoire du projet")
+                    discovery_started = time.perf_counter()
                     for item in self.executor.discover(worktree, self.store.history(10), base):
                         self.store.add(item)
+                    report['discovery_seconds'] = round(time.perf_counter() - discovery_started, 3)
                     proposal = self.choose()
                 if proposal is None:
                     raise Blocked("no_new_validated_hypothesis")
                 report["proposal"] = proposal
                 self.store.proposal_state(proposal["id"], "running", attempt=True)
                 self.store.cycle(id, report)
+                self.phase("Codex travaille : " + proposal["problem"])
+                implementation_started = time.perf_counter()
                 self.executor.implement(worktree, proposal)
+                report['implementation_seconds'] = round(time.perf_counter() - implementation_started, 3)
                 report["changed_files"] = changed_files(worktree, proposal["files"], self.config["protected_files"])
                 if tree_hash(worktree, self.config["protected_files"]) != protected:
                     raise Blocked("validation_contract_modified")
+                self.phase("Tests indépendants et contrôle des modifications")
                 report["after_validation"] = self.verify(worktree)
                 report["after_measurement"] = self.measure(worktree)
                 if tree_hash(worktree, self.config["protected_files"]) != protected:
                     raise Blocked("validation_contract_modified")
                 before, after = report["before_measurement"], report["after_measurement"]
-                if not before or not after or before["metric"] != after["metric"]:
-                    raise Blocked("measurable_acceptance_not_configured")
-                improvement = (1 - after["median"] / before["median"]) * 100
-                report["improvement_percent"] = improvement
-                if improvement < self.config["min_improvement_percent"]:
-                    raise Blocked("insufficient_measured_improvement")
+                if self.config.get("acceptance_mode", "benchmark") == "application_checks":
+                    report["acceptance"] = "independent_application_tests_and_lint"
+                else:
+                    if not before or not after or before["metric"] != after["metric"]:
+                        raise Blocked("measurable_acceptance_not_configured")
+                    improvement = (1 - after["median"] / before["median"]) * 100
+                    report["improvement_percent"] = improvement
+                    if improvement < self.config["min_improvement_percent"]:
+                        raise Blocked("insufficient_measured_improvement")
                 self.original_unchanged()
                 if self.interrupted():
                     raise Blocked("manual_interrupt")
@@ -274,13 +320,26 @@ class Supervisor:
                 git(self.repo, "merge", "--ff-only", branch)
                 backup(self.repo, self.root / "backups" / (id + "-after.bundle"))
                 report.update(status="accepted_in_snapshot", commit=commit)
+                if self.config.get("auto_promote_source", False):
+                    from .promotion import promote
+                    try:
+                        self.phase("Sauvegarde et application au projet")
+                        report["promotion"] = promote(self, worktree, report["changed_files"], id)
+                    except BaseException:
+                        self.store.set("control", {"mode": "stopped", "reason": "source_promotion_failed"})
+                        raise
                 self.store.proposal_state(proposal["id"], "accepted")
                 self.store.set("no_progress", 0)
                 self.store.set("blocked_windows", 0)
-            except (Blocked, RuntimeError) as error:
+            except (Blocked, RuntimeError, OSError) as error:
                 report.update(status="rejected", reason=str(error))
                 if proposal:
                     self.store.proposal_state(proposal["id"], "rejected")
+                if self.config.get("auto_promote_source") and str(error) in {
+                    "source_changed_before_promotion", "source_changed_during_promotion",
+                    "promotion_rollback_conflict", "incomplete_promotion_requires_recovery",
+                    "original_project_changed_reimport_required"}:
+                    self.store.set("control", {"mode": "stopped", "reason": str(error)})
                 count = self.store.get("no_progress", 0) + 1
                 self.store.set("no_progress", count)
                 if count >= self.config["max_no_progress_cycles"] and not self.interrupted():
@@ -293,6 +352,7 @@ class Supervisor:
                                                    "until": time.time() + self.config["cooldown_seconds"]})
             report["elapsed_seconds"] = round(time.time() - report["started_at"], 3)
             self.store.cycle(id, report, report["status"])
+            self.phase("Cycle terminé : " + report["status"])
             if hasattr(self.executor, "record_result"):
                 self.executor.record_result(report)
             return report
@@ -309,7 +369,11 @@ class Supervisor:
                 cycles += 1
             if max_cycles is not None and cycles >= max_cycles:
                 return
-            deadline = time.monotonic() + self.config["interval_seconds"]
+            delay = self.next_delay(result)
+            self.store.set('next_cycle_at', time.time() + delay)
+            if self.store.get('control', {}).get('mode') == 'running':
+                self.phase(f"Prochain cycle dans {delay:g} s · pistes conservées")
+            deadline = time.monotonic() + delay
             waiting_mode = self.store.get("control", {}).get("mode")
             while time.monotonic() < deadline:
                 mode = self.store.get("control", {}).get("mode")
@@ -318,3 +382,18 @@ class Supervisor:
                 if mode == "running" and waiting_mode != "running":
                     break
                 time.sleep(min(1, max(0, deadline - time.monotonic())))
+
+    def next_delay(self, result):
+        # Keep cooldowns and failure pacing; avoid two idle minutes after success
+        # or when another actionable hypothesis is already waiting.
+        interval = self.config['interval_seconds']
+        if self.store.get('control', {}).get('mode') != 'running':
+            return interval
+        backlog = any(p['status'] == 'queued' and
+                      p['attempts'] < self.config['max_attempts_per_proposal'] and
+                      all(f in self.config['allowed_files'] for f in p['payload']['files']) and
+                      (p['payload']['risk'] == 'low' or self.store.get('approval:' + p['id'], False))
+                      for p in self.store.proposals())
+        if backlog or result['status'] == 'accepted_in_snapshot':
+            return max(1, min(interval, self.config.get('active_interval_seconds', interval)))
+        return interval
